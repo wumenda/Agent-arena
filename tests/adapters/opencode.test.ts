@@ -26,6 +26,16 @@ describe("opencode adapter", () => {
     expect(parser.flush?.()).toHaveLength(0);
   });
 
+  it("maps tool_use envelopes to tool_call and file_edit (Task 0/E2E 实测)", () => {
+    const parser = opencodeAdapter.createParser();
+    const evs = parser.parse(JSON.stringify({
+      type: "tool_use",
+      part: { type: "tool", tool: "write", callID: "c1", state: { status: "completed", input: { filePath: "D:/run/x.html", content: "hi" }, output: "ok" } },
+    }));
+    expect(evs.map((e) => e.kind)).toEqual(["tool_call", "file_edit"]);
+    expect((evs[1] as any).path).toBe("D:/run/x.html");
+  });
+
   it("builds run command with model and json format", () => {
     const cmd = opencodeAdapter.buildCommand({ harness: "opencode", model: "ark/glm-5.2" }, "D:/tmp/run3");
     expect(cmd.file).toBe("opencode");

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, appendFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import pLimit from "p-limit";
 import { getMatch, createRun, updateRun, updateMatch, listRuns } from "@/lib/db";
@@ -11,7 +12,9 @@ const CONCURRENCY = Number(process.env.ARENA_CONCURRENCY ?? 3);
 const TIMEOUT_MS = Number(process.env.ARENA_TIMEOUT_MS ?? 15 * 60 * 1000);
 
 function workdirRoot() {
-  return process.env.ARENA_WORKDIR_ROOT ?? ".arena/runs";
+  // 默认放系统临时目录：workdir 若位于本项目 git 仓库内，opencode 会向上找到 git 根写文件，
+  // 破坏运行隔离（实测）；ADR-0001 的「裸跑临时目录」即此意
+  return process.env.ARENA_WORKDIR_ROOT ?? path.join(os.tmpdir(), "model-agent-arena", "runs");
 }
 
 function killTree(pid: number) {

@@ -33,8 +33,14 @@ export const opencodeAdapter: HarnessAdapter = {
           out.push({ kind: "message", text: j.part.text ?? "", ts: now() });
         } else if (j.type === "reasoning" && j.part?.type === "reasoning") {
           out.push({ kind: "thinking", text: j.part.text ?? "", ts: now() });
-        } else if (j.type === "tool" && j.part?.type === "tool") {
-          out.push({ kind: "tool_call", tool: j.part.tool ?? "", input: j.part.state ?? null, ts: now() });
+        } else if ((j.type === "tool_use" || j.type === "tool") && j.part?.type === "tool") {
+          // 实测信封为 {"type":"tool_use","part":{"type":"tool","tool":"write","state":{...}}}
+          const tool = j.part.tool ?? "";
+          out.push({ kind: "tool_call", tool, input: j.part.state?.input ?? null, ts: now() });
+          if (["write", "edit", "patch"].includes(tool)) {
+            const p = j.part.state?.input?.filePath ?? j.part.state?.metadata?.filepath ?? "";
+            if (p) out.push({ kind: "file_edit", path: String(p), ts: now() });
+          }
         } else if (j.type === "step_finish") {
           const tokens = j.part?.tokens;
           out.push({
