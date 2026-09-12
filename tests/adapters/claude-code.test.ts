@@ -29,6 +29,7 @@ describe("claude-code adapter", () => {
     expect(cmd.file).toBe("claude");
     expect(cmd.args).toContain("--output-format");
     expect(cmd.args).toContain("stream-json");
+    expect(cmd.args).toContain("--dangerously-skip-permissions"); // 无头自动化必需
     expect(cmd.args).toContain("--model");
     expect(cmd.args).toContain("sonnet");
     expect(cmd.cwd).toBe("D:/tmp/run1");

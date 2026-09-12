@@ -7,14 +7,16 @@ const now = () => Date.now();
 export const codexAdapter: HarnessAdapter = {
   id: "codex",
   displayName: "Codex CLI",
-  models: ["gpt-5.2-codex", "gpt-5.2", "gpt-5.1-codex", "o4-mini"],
+  // 接入火山方舟 Agent Plan（Responses API，env_key=ARK_API_KEY）
+  models: ["glm-5.3-flash", "glm-5.2", "doubao-seed-2.1-turbo"],
   detect: async () => {
     const r = spawnSync("codex", ["--version"], { shell: true, encoding: "utf8" });
     return { harness: "codex", installed: r.status === 0, detail: (r.stdout || r.stderr || "").trim() };
   },
   buildCommand: (combo, workdir) => ({
     file: "codex",
-    args: ["exec", "-", "--json", "-m", combo.model, "--skip-git-repo-check"],
+    // workspace-write：允许在临时 workdir 内写文件（默认 read-only 无法完成任务）
+    args: ["exec", "-", "--json", "-m", combo.model, "--skip-git-repo-check", "--sandbox", "workspace-write"],
     cwd: workdir,
     stdin: "__PROMPT__", // runner 会把该占位符替换为对局 prompt（经 stdin 传入；Task 0 实测 `-` 可用）
   }),

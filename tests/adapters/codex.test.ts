@@ -45,6 +45,8 @@ describe("codex adapter", () => {
     expect(cmd.args).toContain("--json");
     expect(cmd.args).toContain("-m");
     expect(cmd.args).toContain("--skip-git-repo-check"); // Task 0 实测：非 git 目录必需
+    expect(cmd.args).toContain("--sandbox"); // E2E 实测：默认 read-only 无法写文件
+    expect(cmd.args).toContain("workspace-write");
     expect(cmd.cwd).toBe("D:/tmp/run2");
   });
 });

@@ -5,7 +5,7 @@ const SYSTEM_PROMPT = `你是"模型-Agent竞技场"的实验配置解析器。�
 {"prompt": string, "combos": [{"harness": string, "model": string}]}
 规则：
 - harness 只能取 "claude-code" | "codex" | "opencode"
-- model 使用各 harness 的模型标识：claude-code 如 "sonnet"/"opus"/"haiku"；codex 如 "gpt-5.2-codex"；opencode 如 "ark/glm-5.2"、"opencode/deepseek-v4-flash-free"
+- model 使用各 harness 的模型标识：claude-code 如 "glm-5.3-flash"（也接受 "sonnet"/"opus"/"haiku" 别名）；codex 如 "glm-5.3-flash"、"glm-5.2"；opencode 如 "ark/glm-5.2"、"opencode/deepseek-v4-flash-free"
 - 用户未指定模型时给该 harness 的默认模型；未指定 harness 时默认三个全选
 - prompt 是去掉"对比/比较"等指令性措辞后的任务本体`;
 

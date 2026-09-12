@@ -7,14 +7,16 @@ const now = () => Date.now();
 export const claudeCodeAdapter: HarnessAdapter = {
   id: "claude-code",
   displayName: "Claude Code",
-  models: ["sonnet", "opus", "haiku", "sonnet-4-5", "opus-4-1"],
+  // 接入火山方舟 Agent Plan（glm-5.3-flash）；sonnet/opus/haiku 别名经 ANTHROPIC_DEFAULT_*_MODEL 映射到同一模型
+  models: ["glm-5.3-flash", "sonnet", "opus", "haiku"],
   detect: async () => {
     const r = spawnSync("claude", ["--version"], { shell: true, encoding: "utf8" });
     return { harness: "claude-code", installed: r.status === 0, detail: (r.stdout || r.stderr || "").trim() };
   },
   buildCommand: (combo: Combo, workdir: string) => ({
     file: "claude",
-    args: ["-p", "--output-format", "stream-json", "--verbose", "--model", combo.model],
+    // 无头自动化：跳过权限确认（运行在隔离的临时 workdir，ADR-0001）
+    args: ["-p", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--model", combo.model],
     cwd: workdir,
     // prompt 走 stdin，避免 shell 引号问题
   }),
