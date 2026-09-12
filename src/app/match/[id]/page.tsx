@@ -62,8 +62,12 @@ export default function MatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const rerun = async () => {
-    const res = await fetch(`/api/matches/${id}/rerun`, { method: "POST" });
+  const rerun = async (combos?: { harness: string; model: string }[]) => {
+    const res = await fetch(`/api/matches/${id}/rerun`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(combos ? { combos } : {}),
+    });
     const d = await res.json();
     if (res.ok) router.push(`/match/${d.match.id}`);
   };
@@ -113,7 +117,7 @@ export default function MatchPage() {
       {["completed", "partial"].includes(matchStatus) && <PreviewGrid matchId={id} runs={runs} />}
       <div className="flex gap-4 overflow-x-auto pb-2">
         {runs.map((r) => (
-          <RunPanel key={r.id} run={r} events={events[r.id] ?? []} matchId={id} />
+          <RunPanel key={r.id} run={r} events={events[r.id] ?? []} matchId={id} onRerunOne={(c) => rerun([c])} />
         ))}
         {runs.length === 0 && (
           <div className="glass rounded-3xl p-8 text-sm text-white/40">等待运行启动…</div>

@@ -19,6 +19,11 @@ function createDb(url: string) {
     CREATE TABLE IF NOT EXISTS matches (id TEXT PRIMARY KEY, prompt TEXT NOT NULL, combos TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, match_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', error TEXT, workdir TEXT NOT NULL, started_at INTEGER, finished_at INTEGER, duration_ms INTEGER, tokens_in INTEGER, tokens_out INTEGER, cost_usd REAL);
   `);
+  // 轻量迁移：旧库补列
+  const cols = sqlite.pragma("table_info(matches)") as { name: string }[];
+  if (!cols.some((c) => c.name === "parent_match_id")) {
+    sqlite.exec("ALTER TABLE matches ADD COLUMN parent_match_id TEXT");
+  }
   return db;
 }
 
@@ -27,9 +32,9 @@ export const db = createDb(url);
 
 const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
-export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string }) {
+export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string; parentMatchId?: string }) {
   const id = nanoid();
-  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending" }).run();
+  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending", parentMatchId: input.parentMatchId ?? null }).run();
   return getMatch(id)!;
 }
 
@@ -70,4 +75,17 @@ export function getComboStats() {
     avgCostUsd: sql<number | null>`AVG(${runs.costUsd})`,
   }).from(runs).where(sql`${runs.status} != 'pending'`).groupBy(runs.harness, runs.model).all();
   return rows.sort((a, b) => b.total - a.total);
+}
+
+// 血缘链：沿 parentMatchId 向上回溯，最老在前，含自身
+export function getLineage(id: string) {
+  const chain: MatchRow[] = [];
+  let cur = getMatch(id);
+  const guard = new Set<string>();
+  while (cur && !guard.has(cur.id)) {
+    guard.add(cur.id);
+    chain.unshift(cur);
+    cur = cur.parentMatchId ? getMatch(cur.parentMatchId) ?? null : null;
+  }
+  return chain;
 }

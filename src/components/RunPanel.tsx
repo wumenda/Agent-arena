@@ -14,7 +14,7 @@ const STATUS_STYLE: Record<string, string> = {
   timeout: "bg-amber-400/15 text-amber-300",
 };
 
-export default function RunPanel({ run, events, matchId }: { run: RunRow; events: ArenaEvent[]; matchId: string }) {
+export default function RunPanel({ run, events, matchId, onRerunOne }: { run: RunRow; events: ArenaEvent[]; matchId: string; onRerunOne?: (combo: { harness: string; model: string }) => void }) {
   return (
     <motion.div
       layout
@@ -51,6 +51,16 @@ export default function RunPanel({ run, events, matchId }: { run: RunRow; events
       </AnimatePresence>
       <MetricsBar durationMs={run.durationMs} tokensIn={run.tokensIn} tokensOut={run.tokensOut} costUsd={run.costUsd}
         startedAt={run.startedAt} running={run.status === "running"} />
+      {onRerunOne && ["failed", "timeout", "completed"].includes(run.status) && (
+        <div className="flex justify-end">
+          <button
+            className="cursor-pointer rounded-full bg-white/5 px-2.5 py-1 text-[10px] text-white/50 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+            onClick={() => onRerunOne({ harness: run.harness, model: run.model })}
+          >
+            ⟳ 重跑此组合
+          </button>
+        </div>
+      )}
       <TrajectoryView events={events} />
       {(run.status === "completed" || run.status === "timeout") && <DiffView events={events} matchId={matchId} run={run} />}
     </motion.div>

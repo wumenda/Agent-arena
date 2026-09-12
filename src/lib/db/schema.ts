@@ -6,6 +6,7 @@ export const matches = sqliteTable("matches", {
   prompt: text("prompt").notNull(),
   combos: text("combos").notNull(), // JSON: {harness, model}[]
   status: text("status").notNull().default("pending"), // pending|running|completed|partial
+  parentMatchId: text("parent_match_id"), // 重跑血缘：本对局由哪个对局重跑而来
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
 
