@@ -49,7 +49,8 @@ export default function RunPanel({ run, events, matchId }: { run: RunRow; events
           </motion.div>
         )}
       </AnimatePresence>
-      <MetricsBar durationMs={run.durationMs} tokensIn={run.tokensIn} tokensOut={run.tokensOut} costUsd={run.costUsd} />
+      <MetricsBar durationMs={run.durationMs} tokensIn={run.tokensIn} tokensOut={run.tokensOut} costUsd={run.costUsd}
+        startedAt={run.startedAt} running={run.status === "running"} />
       <TrajectoryView events={events} />
       {(run.status === "completed" || run.status === "timeout") && <DiffView events={events} matchId={matchId} run={run} />}
     </motion.div>

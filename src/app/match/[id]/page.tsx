@@ -25,12 +25,14 @@ export default function MatchPage() {
   const [showDiff, setShowDiff] = useState(false);
 
   useEffect(() => {
+    const doneRef = { current: false };
     const load = async () => {
       const res = await fetch(`/api/matches/${id}`);
       if (res.ok) {
         const { match, runs } = await res.json();
         setRuns(runs);
         setMatchStatus(match.status);
+        if (["completed", "partial"].includes(match.status)) doneRef.current = true;
         // 兜底回放：拉历史轨迹（刷新/断流后仍有数据）
         for (const r of runs) {
           if (!events[r.id] || events[r.id]!.length === 0) {
@@ -42,7 +44,7 @@ export default function MatchPage() {
       }
     };
     load();
-    const poll = setInterval(load, 5000);
+    const poll = setInterval(() => { if (!doneRef.current) load(); }, 5000);
     const es = new EventSource(`/api/matches/${id}/stream`);
     es.onmessage = (m) => {
       const e = JSON.parse(m.data);
@@ -52,6 +54,7 @@ export default function MatchPage() {
         setRuns((prev) => prev.map((r) => (r.id === e.runId ? { ...r, status: e.status, error: e.error ?? r.error } : r)));
       } else if (e.channel === "match-status") {
         setMatchStatus(e.status);
+        if (["completed", "partial"].includes(e.status)) doneRef.current = true;
       }
     };
     return () => { clearInterval(poll); es.close(); };
