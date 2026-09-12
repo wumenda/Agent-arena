@@ -86,6 +86,12 @@ export default function MatchPage() {
           </AnimatePresence>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <a
+            className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+            href={`/api/matches/${id}/report`}
+          >
+            导出报告
+          </a>
           <button
             className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
             disabled={runs.length < 2}
