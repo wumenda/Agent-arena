@@ -114,7 +114,7 @@ export default function MatchPage() {
         </div>
       </div>
       {["completed", "partial"].includes(matchStatus) && runs.length > 0 && <ComparisonTable runs={runs} />}
-      {["completed", "partial"].includes(matchStatus) && <PreviewGrid matchId={id} runs={runs} />}
+      <PreviewGrid matchId={id} runs={runs} live={matchStatus === "running"} />
       <div className="flex gap-4 overflow-x-auto pb-2">
         {runs.map((r) => (
           <RunPanel key={r.id} run={r} events={events[r.id] ?? []} matchId={id} onRerunOne={(c) => rerun([c])} />
