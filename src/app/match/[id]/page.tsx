@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import RunPanel from "@/components/RunPanel";
 import RunDiff from "@/components/RunDiff";
 import ComparisonTable from "@/components/ComparisonTable";
+import LineageChart from "@/components/LineageChart";
 import PreviewGrid from "@/components/PreviewGrid";
 import type { ArenaEvent } from "@/lib/arena/types";
 import type { RunRow } from "@/lib/db/schema";
@@ -133,6 +134,7 @@ export default function MatchPage() {
         </div>
       </div>
       {["completed", "partial"].includes(matchStatus) && runs.length > 0 && <ComparisonTable runs={runs} />}
+      <LineageChart matchId={id} />
       <PreviewGrid matchId={id} runs={runs} live={matchStatus === "running"} />
       <div className="flex gap-4 overflow-x-auto pb-2">
         {runs.map((r) => (
