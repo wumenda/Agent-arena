@@ -78,7 +78,7 @@ export default function MatchPage() {
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {runs.map((r) => (
-          <RunPanel key={r.id} run={r} events={events[r.id] ?? []} />
+          <RunPanel key={r.id} run={r} events={events[r.id] ?? []} matchId={id} />
         ))}
         {runs.length === 0 && (
           <div className="glass rounded-3xl p-8 text-sm text-white/40">等待运行启动…</div>

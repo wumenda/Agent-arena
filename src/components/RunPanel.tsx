@@ -13,7 +13,7 @@ const STATUS_STYLE: Record<string, string> = {
   timeout: "bg-amber-400/15 text-amber-300",
 };
 
-export default function RunPanel({ run, events }: { run: RunRow; events: ArenaEvent[] }) {
+export default function RunPanel({ run, events, matchId }: { run: RunRow; events: ArenaEvent[]; matchId: string }) {
   return (
     <div className="glass-strong w-80 shrink-0 space-y-3 rounded-3xl p-4">
       <div className="flex items-center justify-between gap-2">
@@ -27,7 +27,7 @@ export default function RunPanel({ run, events }: { run: RunRow; events: ArenaEv
       )}
       <MetricsBar durationMs={run.durationMs} tokensIn={run.tokensIn} tokensOut={run.tokensOut} costUsd={run.costUsd} />
       <TrajectoryView events={events} />
-      {(run.status === "completed" || run.status === "timeout") && <DiffView events={events} />}
+      {(run.status === "completed" || run.status === "timeout") && <DiffView events={events} matchId={matchId} run={run} />}
     </div>
   );
 }
