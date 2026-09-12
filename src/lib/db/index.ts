@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq, desc, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { matches, runs, type MatchRow, type RunRow } from "./schema";
 
@@ -88,4 +88,21 @@ export function getLineage(id: string) {
     cur = cur.parentMatchId ? getMatch(cur.parentMatchId) ?? null : null;
   }
   return chain;
+}
+
+// 删除对局：清 runs/matches 行 + 磁盘 workdir 目录；running 中禁止删
+export function deleteMatch(id: string): { ok: boolean; error?: string } {
+  const match = getMatch(id);
+  if (!match) return { ok: false, error: "not found" };
+  const runRows = listRuns(id);
+  if (runRows.some((r) => r.status === "running" || r.status === "pending")) {
+    return { ok: false, error: "match is still running" };
+  }
+  db.delete(runs).where(eq(runs.matchId, id)).run();
+  db.delete(matches).where(eq(matches.id, id)).run();
+  if (runRows.length > 0) {
+    const matchDir = path.dirname(runRows[0].workdir); // <root>/<matchId>
+    rmSync(matchDir, { recursive: true, force: true });
+  }
+  return { ok: true };
 }

@@ -17,10 +17,19 @@ export default function HistoryPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [harness, setHarness] = useState("all");
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/matches").then((r) => r.json()).then((d) => setMatches(d.matches ?? []));
   }, []);
+
+  const remove = async (mid: string) => {
+    if (!confirm("删除该对局？轨迹文件将一并清除。")) return;
+    setDeleting(mid);
+    const res = await fetch(`/api/matches/${mid}`, { method: "DELETE" });
+    setDeleting(null);
+    if (res.ok) setMatches((prev) => prev.filter((m) => m.id !== mid));
+  };
 
   const harnessOptions = useMemo(
     () => [...new Set(matches.flatMap((m) => JSON.parse(m.combos).map((c: { harness: string }) => c.harness)))].sort(),
@@ -62,23 +71,32 @@ export default function HistoryPage() {
       )}
       <div className="space-y-3">
         {filtered.map((m) => (
-          <Link
-            key={m.id}
-            href={`/match/${m.id}`}
-            className="glass block cursor-pointer rounded-3xl p-4 transition-colors duration-200 hover:bg-white/10"
-          >
-            <div className="flex items-center gap-2 font-mono text-xs text-white/35">
-              <span className="truncate">{m.id}</span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status] ?? "bg-white/10 text-white/60"}`}>
-                {m.status}
-              </span>
-              <span className="shrink-0">{new Date(m.createdAt).toLocaleString()}</span>
-            </div>
-            <div className="mt-1.5 truncate text-sm text-white/85">{m.prompt}</div>
-            <div className="mt-1 text-xs text-white/40">
-              {JSON.parse(m.combos).map((c: { harness: string; model: string }) => `${c.harness}×${c.model}`).join("，")}
-            </div>
-          </Link>
+          <div key={m.id} className="relative">
+            <Link
+              href={`/match/${m.id}`}
+              className="glass block cursor-pointer rounded-3xl p-4 pr-10 transition-colors duration-200 hover:bg-white/10"
+            >
+              <div className="flex items-center gap-2 font-mono text-xs text-white/35">
+                <span className="truncate">{m.id}</span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status] ?? "bg-white/10 text-white/60"}`}>
+                  {m.status}
+                </span>
+                <span className="shrink-0">{new Date(m.createdAt).toLocaleString()}</span>
+              </div>
+              <div className="mt-1.5 truncate text-sm text-white/85">{m.prompt}</div>
+              <div className="mt-1 text-xs text-white/40">
+                {JSON.parse(m.combos).map((c: { harness: string; model: string }) => `${c.harness}×${c.model}`).join("，")}
+              </div>
+            </Link>
+            <button
+              className="absolute top-3 right-3 cursor-pointer rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/50 hover:bg-red-400/20 hover:text-red-300 disabled:opacity-40"
+              title="删除对局"
+              disabled={deleting === m.id}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); remove(m.id); }}
+            >
+              {deleting === m.id ? "…" : "✕"}
+            </button>
+          </div>
         ))}
       </div>
     </main>
