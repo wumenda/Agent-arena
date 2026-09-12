@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# arena runtime data
+/.arena/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
