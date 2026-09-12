@@ -4,6 +4,7 @@ import type { MatchRow, RunRow } from "@/lib/db/schema";
 
 const match: MatchRow = {
   id: "m1", prompt: "写一个贪吃蛇", combos: "[]", status: "completed",
+  parentMatchId: null,
   createdAt: new Date("2026-09-12T00:00:00Z"),
 };
 const run: RunRow = {

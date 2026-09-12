@@ -31,7 +31,7 @@ export async function renderShot(html: string, outFile: string): Promise<ShotRes
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 20000 });
+    await page.setContent(html, { waitUntil: "load", timeout: 20000 });
     await page.screenshot({ path: outFile });
     return { file: outFile };
   } finally {

@@ -127,7 +127,7 @@ export default function MatchPage() {
           <motion.button
             whileTap={{ scale: 0.95 }}
             className="glass shrink-0 cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
-            onClick={rerun}
+            onClick={() => rerun()}
           >
             一键重跑（看方差）
           </motion.button>

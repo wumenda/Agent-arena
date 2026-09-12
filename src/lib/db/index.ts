@@ -85,7 +85,7 @@ export function getLineage(id: string) {
   while (cur && !guard.has(cur.id)) {
     guard.add(cur.id);
     chain.unshift(cur);
-    cur = cur.parentMatchId ? getMatch(cur.parentMatchId) ?? null : null;
+    cur = cur.parentMatchId ? getMatch(cur.parentMatchId) : undefined;
   }
   return chain;
 }
