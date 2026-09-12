@@ -1,0 +1,99 @@
+"use client";
+import { useEffect, useMemo, useState } from "react";
+import { diffLines, type DiffLine } from "@/lib/arena/diff";
+import type { RunRow } from "@/lib/db/schema";
+
+// 双 Run 产出对比：选两个 Run + 同名产出文件，行级 diff（红=A 删除，绿=B 新增）
+export default function RunDiff({ matchId, runs, onClose }: {
+  matchId: string; runs: RunRow[]; onClose: () => void;
+}) {
+  const [runA, setRunA] = useState(runs[0]?.id ?? "");
+  const [runB, setRunB] = useState(runs[1]?.id ?? runs[0]?.id ?? "");
+  const [filesA, setFilesA] = useState<string[]>([]);
+  const [filesB, setFilesB] = useState<string[]>([]);
+  const [file, setFile] = useState("");
+  const [contentA, setContentA] = useState<string | null>(null);
+  const [contentB, setContentB] = useState<string | null>(null);
+
+  const label = (id: string) => {
+    const r = runs.find((x) => x.id === id);
+    return r ? `${r.harness} · ${r.model}` : id;
+  };
+
+  useEffect(() => {
+    if (!runA || !runB) return;
+    setFile(""); setContentA(null); setContentB(null);
+    Promise.all([
+      fetch(`/api/matches/${matchId}/file?runId=${runA}`).then((r) => r.json()),
+      fetch(`/api/matches/${matchId}/file?runId=${runB}`).then((r) => r.json()),
+    ]).then(([a, b]) => {
+      setFilesA(a.files?.map((f: { path: string }) => f.path) ?? []);
+      setFilesB(b.files?.map((f: { path: string }) => f.path) ?? []);
+    });
+  }, [matchId, runA, runB]);
+
+  const common = useMemo(() => filesA.filter((f) => filesB.includes(f)), [filesA, filesB]);
+
+  useEffect(() => {
+    if (!file || !runA || !runB) return;
+    Promise.all([
+      fetch(`/api/matches/${matchId}/file?runId=${runA}&path=${encodeURIComponent(file)}`).then((r) => r.json()),
+      fetch(`/api/matches/${matchId}/file?runId=${runB}&path=${encodeURIComponent(file)}`).then((r) => r.json()),
+    ]).then(([a, b]) => {
+      setContentA(a.content ?? "");
+      setContentB(b.content ?? "");
+    });
+  }, [matchId, runA, runB, file]);
+
+  const diff: DiffLine[] | null = useMemo(
+    () => contentA != null && contentB != null
+      ? diffLines(contentA.split("\n"), contentB.split("\n"))
+      : null,
+    [contentA, contentB]
+  );
+
+  const sel = "glass-input cursor-pointer rounded-full px-3 py-1.5 text-xs text-white/85 outline-none";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6" onClick={onClose}>
+      <div className="glass-strong flex max-h-[85vh] w-full max-w-5xl flex-col rounded-3xl p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-sm font-semibold text-white/90">产出对比</div>
+          <button className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20" onClick={onClose}>关闭</button>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select className={sel} value={runA} onChange={(e) => setRunA(e.target.value)}>
+            {runs.map((r) => <option key={r.id} value={r.id}>A：{label(r.id)}</option>)}
+          </select>
+          <span className="text-white/30">vs</span>
+          <select className={sel} value={runB} onChange={(e) => setRunB(e.target.value)}>
+            {runs.map((r) => <option key={r.id} value={r.id}>B：{label(r.id)}</option>)}
+          </select>
+          <select className={sel} value={file} onChange={(e) => setFile(e.target.value)} disabled={common.length === 0}>
+            <option value="">{common.length === 0 ? "无同名产出文件" : "选择文件…"}</option>
+            {common.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        {diff && (
+          <div className="mt-2 text-[10px] text-white/40">
+            <span className="text-red-300">− {label(runA)}</span>
+            <span className="mx-2">·</span>
+            <span className="text-emerald-300">+ {label(runB)}</span>
+          </div>
+        )}
+        {diff && (
+          <div className="mt-2 max-h-[60vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-3 font-mono text-xs">
+            {diff.map((l, i) => (
+              <div key={i} className={
+                l.type === "add" ? "bg-emerald-400/10 text-emerald-300" :
+                l.type === "del" ? "bg-red-400/10 text-red-300" : "text-white/40"
+              }>
+                <span className="mr-2 inline-block w-3 select-none">{l.type === "add" ? "+" : l.type === "del" ? "−" : " "}</span>
+                <span className="whitespace-pre-wrap break-all">{l.text || " "}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

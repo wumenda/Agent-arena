@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
 import RunPanel from "@/components/RunPanel";
+import RunDiff from "@/components/RunDiff";
 import type { ArenaEvent } from "@/lib/arena/types";
 import type { RunRow } from "@/lib/db/schema";
 
@@ -19,6 +21,7 @@ export default function MatchPage() {
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [events, setEvents] = useState<Record<string, ArenaEvent[]>>({});
   const [matchStatus, setMatchStatus] = useState("…");
+  const [showDiff, setShowDiff] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -65,16 +68,35 @@ export default function MatchPage() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <h1 className="truncate font-mono text-sm text-white/50">对局 {id}</h1>
-          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLE[matchStatus] ?? "bg-white/10 text-white/60"}`}>
-            {matchStatus}
-          </span>
+          {/* 对局状态切换时弹跳换新 */}
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span
+              key={matchStatus}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.12 } }}
+              className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLE[matchStatus] ?? "bg-white/10 text-white/60"}`}
+            >
+              {matchStatus}
+            </motion.span>
+          </AnimatePresence>
         </div>
-        <button
-          className="glass shrink-0 cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
-          onClick={rerun}
-        >
-          一键重跑（看方差）
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={runs.length < 2}
+            onClick={() => setShowDiff(true)}
+          >
+            产出对比
+          </button>
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            className="glass shrink-0 cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+            onClick={rerun}
+          >
+            一键重跑（看方差）
+          </motion.button>
+        </div>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {runs.map((r) => (
@@ -84,6 +106,7 @@ export default function MatchPage() {
           <div className="glass rounded-3xl p-8 text-sm text-white/40">等待运行启动…</div>
         )}
       </div>
+      {showDiff && <RunDiff matchId={id} runs={runs} onClose={() => setShowDiff(false)} />}
     </main>
   );
 }
