@@ -48,6 +48,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             >
               历史对局
             </Link>
+            <Link
+              href="/stats"
+              className="rounded-full px-3 py-1 text-white/60 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+            >
+              统计
+            </Link>
           </nav>
         </header>
         <div className="flex-1 flex flex-col pt-20">

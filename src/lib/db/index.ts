@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { mkdirSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -55,4 +55,19 @@ export function listRuns(matchId: string) {
 
 export function updateMatch(id: string, patch: Partial<MatchRow>) {
   db.update(matches).set(patch).where(eq(matches.id, id)).run();
+}
+
+// 跨对局统计：按 harness×model 聚合（排除未开始的 run）
+export function getComboStats() {
+  const rows = db.select({
+    harness: runs.harness,
+    model: runs.model,
+    total: sql<number>`COUNT(*)`,
+    completed: sql<number>`SUM(CASE WHEN ${runs.status} = 'completed' THEN 1 ELSE 0 END)`,
+    avgDurationMs: sql<number | null>`AVG(${runs.durationMs})`,
+    avgTokensIn: sql<number | null>`AVG(${runs.tokensIn})`,
+    avgTokensOut: sql<number | null>`AVG(${runs.tokensOut})`,
+    avgCostUsd: sql<number | null>`AVG(${runs.costUsd})`,
+  }).from(runs).where(sql`${runs.status} != 'pending'`).groupBy(runs.harness, runs.model).all();
+  return rows.sort((a, b) => b.total - a.total);
 }
