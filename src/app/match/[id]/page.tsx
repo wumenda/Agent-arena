@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import RunPanel from "@/components/RunPanel";
 import RunDiff from "@/components/RunDiff";
 import ComparisonTable from "@/components/ComparisonTable";
+import PreviewGrid from "@/components/PreviewGrid";
 import type { ArenaEvent } from "@/lib/arena/types";
 import type { RunRow } from "@/lib/db/schema";
 
@@ -109,6 +110,7 @@ export default function MatchPage() {
         </div>
       </div>
       {["completed", "partial"].includes(matchStatus) && runs.length > 0 && <ComparisonTable runs={runs} />}
+      {["completed", "partial"].includes(matchStatus) && <PreviewGrid matchId={id} runs={runs} />}
       <div className="flex gap-4 overflow-x-auto pb-2">
         {runs.map((r) => (
           <RunPanel key={r.id} run={r} events={events[r.id] ?? []} matchId={id} />
