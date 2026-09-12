@@ -74,6 +74,21 @@ body::before {
   background: transparent;
 }
 
+/* 导航落入动画（layout 为服务端组件，用纯 CSS 实现） */
+@keyframes nav-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.nav-drop {
+  animation: nav-drop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -1,15 +1,20 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
 import ModelSelect from "./ModelSelect";
 import { estimateCost } from "@/lib/arena/estimator";
 import type { Combo, MatchConfig } from "@/lib/arena/types";
 
+// 组合行加稳定 id，供 AnimatePresence 追踪增删
+type ComboRow = { id: number; harness: string; model: string };
+
 export default function ConfigForm({ initial }: { initial?: MatchConfig | null }) {
   const router = useRouter();
+  const nextId = useRef(1);
   const [prompt, setPrompt] = useState(initial?.prompt ?? "");
-  const [combos, setCombos] = useState<{ harness: string; model: string }[]>(
-    initial?.combos ?? [{ harness: "claude-code", model: "sonnet" }]
+  const [combos, setCombos] = useState<ComboRow[]>(
+    (initial?.combos ?? [{ harness: "claude-code", model: "sonnet" }]).map((c) => ({ ...c, id: nextId.current++ }))
   );
   const [submitting, setSubmitting] = useState(false);
   const est = estimateCost(combos as Combo[]);
@@ -19,7 +24,7 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
     const res = await fetch("/api/matches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, combos }),
+      body: JSON.stringify({ prompt, combos: combos.map(({ harness, model }) => ({ harness, model })) }),
     });
     const data = await res.json();
     setSubmitting(false);
@@ -37,35 +42,53 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
         onChange={(e) => setPrompt(e.target.value)}
       />
       <div className="space-y-2">
-        {combos.map((c, i) => (
-          <div key={i} className="glass flex items-center gap-2 rounded-2xl p-2">
-            <ModelSelect value={c} onChange={(v) => setCombos(combos.map((x, j) => (j === i ? v : x)))} />
-            <button
-              className="cursor-pointer rounded-full px-3 py-1 text-sm text-red-400 transition-colors duration-200 hover:bg-red-400/10 hover:text-red-300"
-              onClick={() => setCombos(combos.filter((_, j) => j !== i))}
+        <AnimatePresence initial={false}>
+          {combos.map((c) => (
+            <motion.div
+              key={c.id}
+              layout
+              initial={{ opacity: 0, y: -10, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+              className="glass flex items-center gap-2 rounded-2xl p-2"
             >
-              删除
-            </button>
-          </div>
-        ))}
-        <button
+              <ModelSelect value={c} onChange={(v) => setCombos(combos.map((x) => (x.id === c.id ? { ...x, ...v } : x)))} />
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                className="cursor-pointer rounded-full px-3 py-1 text-sm text-red-400 transition-colors duration-200 hover:bg-red-400/10 hover:text-red-300"
+                onClick={() => setCombos(combos.filter((x) => x.id !== c.id))}
+              >
+                删除
+              </motion.button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        <motion.button
+          whileTap={{ scale: 0.95 }}
           className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
-          onClick={() => setCombos([...combos, { harness: "opencode", model: "ark/glm-5.2" }])}
+          onClick={() => setCombos([...combos, { id: nextId.current++, harness: "opencode", model: "ark/glm-5.2" }])}
         >
           + 添加组合
-        </button>
+        </motion.button>
       </div>
       <div className="text-sm text-white/50">
         预估成本：<span className="font-mono text-white/80">${est.low} – ${est.high}</span>
         （{combos.length} 个组合并行，单运行超时 15 分钟）
       </div>
-      <button
-        className="cursor-pointer rounded-full bg-[#0a84ff] px-6 py-2 font-medium text-white shadow-lg shadow-sky-500/25 transition-colors duration-200 hover:bg-[#409cff] disabled:cursor-not-allowed disabled:opacity-40"
+      <motion.button
+        whileTap={{ scale: 0.96 }}
+        className="flex cursor-pointer items-center gap-2 rounded-full bg-[#0a84ff] px-6 py-2 font-medium text-white shadow-lg shadow-sky-500/25 transition-colors duration-200 hover:bg-[#409cff] disabled:cursor-not-allowed disabled:opacity-40"
         disabled={!prompt.trim() || combos.length === 0 || submitting}
         onClick={start}
       >
+        {submitting && (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+            strokeLinecap="round" className="size-4 animate-spin" aria-hidden>
+            <path d="M21 12a9 9 0 1 1-6.2-8.56" />
+          </svg>
+        )}
         {submitting ? "启动中…" : "确认开跑"}
-      </button>
+      </motion.button>
     </div>
   );
 }

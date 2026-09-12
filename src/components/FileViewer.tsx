@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 
 // 产出文件查看弹层：文本直接展示；HTML 用沙箱 iframe 预览（allow-scripts，无同源权限）
 export default function FileViewer({ matchId, runId, filePath, onClose }: {
@@ -19,16 +20,28 @@ export default function FileViewer({ matchId, runId, filePath, onClose }: {
   const isHtml = /\.html?$/i.test(filePath);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6" onClick={onClose}>
-      <div className="glass-strong flex max-h-[85vh] w-full max-w-4xl flex-col rounded-3xl p-5" onClick={(e) => e.stopPropagation()}>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 14 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="glass-strong flex max-h-[85vh] w-full max-w-4xl flex-col rounded-3xl p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between gap-4">
           <div className="truncate font-mono text-sm text-sky-300" title={filePath}>{filePath}</div>
-          <button
-            className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20"
+          <motion.button
+            whileTap={{ scale: 0.94 }}
+            className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 transition-colors duration-200 hover:bg-white/20"
             onClick={onClose}
           >
             关闭
-          </button>
+          </motion.button>
         </div>
         {error && <div className="mt-3 text-sm text-red-400">{error}</div>}
         {data?.truncated && <div className="mt-2 text-xs text-amber-300">文件超过 1MB，仅显示前 1MB</div>}
@@ -45,7 +58,7 @@ export default function FileViewer({ matchId, runId, filePath, onClose }: {
             {data.content}
           </pre>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

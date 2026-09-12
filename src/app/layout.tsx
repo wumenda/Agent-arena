@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
+import MotionProvider from "@/components/MotionProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,7 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col font-sans">
         {/* 悬浮液态玻璃胶囊导航 */}
-        <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+        <header className="nav-drop fixed top-4 left-1/2 z-50 -translate-x-1/2">
           <nav className="glass-strong flex items-center gap-1 rounded-full pl-4 pr-1.5 py-1.5 text-sm whitespace-nowrap">
             <Link
               href="/"
@@ -49,7 +50,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </Link>
           </nav>
         </header>
-        <div className="flex-1 flex flex-col pt-20">{children}</div>
+        <div className="flex-1 flex flex-col pt-20">
+          <MotionProvider>{children}</MotionProvider>
+        </div>
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { motion } from "motion/react";
 
 type MatchRow = { id: string; prompt: string; combos: string; status: string; createdAt: string };
 
@@ -19,29 +20,49 @@ export default function HistoryPage() {
   }, []);
   return (
     <main className="mx-auto w-full max-w-4xl space-y-4 p-8">
-      <h1 className="text-2xl font-bold tracking-tight text-white/90">历史对局</h1>
+      <motion.h1
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-2xl font-bold tracking-tight text-white/90"
+      >
+        历史对局
+      </motion.h1>
       {matches.length === 0 && (
-        <div className="glass rounded-3xl p-8 text-center text-sm text-white/40">还没有对局</div>
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.06 }}
+          className="glass rounded-3xl p-8 text-center text-sm text-white/40"
+        >
+          还没有对局
+        </motion.div>
       )}
       <div className="space-y-3">
-        {matches.map((m) => (
-          <Link
+        {matches.map((m, i) => (
+          <motion.div
             key={m.id}
-            href={`/match/${m.id}`}
-            className="glass block cursor-pointer rounded-3xl p-4 transition-colors duration-200 hover:bg-white/10"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: Math.min(i * 0.05, 0.4) }}
+            whileHover={{ y: -2 }}
           >
-            <div className="flex items-center gap-2 font-mono text-xs text-white/35">
-              <span className="truncate">{m.id}</span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status] ?? "bg-white/10 text-white/60"}`}>
-                {m.status}
-              </span>
-              <span className="shrink-0">{new Date(m.createdAt).toLocaleString()}</span>
-            </div>
-            <div className="mt-1.5 truncate text-sm text-white/85">{m.prompt}</div>
-            <div className="mt-1 text-xs text-white/40">
-              {JSON.parse(m.combos).map((c: { harness: string; model: string }) => `${c.harness}×${c.model}`).join("，")}
-            </div>
-          </Link>
+            <Link
+              href={`/match/${m.id}`}
+              className="glass block cursor-pointer rounded-3xl p-4 transition-colors duration-200 hover:bg-white/10"
+            >
+              <div className="flex items-center gap-2 font-mono text-xs text-white/35">
+                <span className="truncate">{m.id}</span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status] ?? "bg-white/10 text-white/60"}`}>
+                  {m.status}
+                </span>
+                <span className="shrink-0">{new Date(m.createdAt).toLocaleString()}</span>
+              </div>
+              <div className="mt-1.5 truncate text-sm text-white/85">{m.prompt}</div>
+              <div className="mt-1 text-xs text-white/40">
+                {JSON.parse(m.combos).map((c: { harness: string; model: string }) => `${c.harness}×${c.model}`).join("，")}
+              </div>
+            </Link>
+          </motion.div>
         ))}
       </div>
     </main>
