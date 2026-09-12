@@ -36,13 +36,32 @@ export default function FileViewer({ matchId, runId, filePath, onClose }: {
       >
         <div className="flex items-center justify-between gap-4">
           <div className="truncate font-mono text-sm text-sky-300" title={filePath}>{filePath}</div>
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 transition-colors duration-200 hover:bg-white/20"
-            onClick={onClose}
-          >
-            关闭
-          </motion.button>
+          <div className="flex shrink-0 items-center gap-2">
+            {data && (
+              <button
+                className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20"
+                title="下载该文件"
+                onClick={() => {
+                  const blob = new Blob([data.content], { type: "text/plain;charset=utf-8" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = filePath.split("/").pop() ?? "file.txt";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                ⬇ 下载
+              </button>
+            )}
+            <motion.button
+              whileTap={{ scale: 0.94 }}
+              className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 transition-colors duration-200 hover:bg-white/20"
+              onClick={onClose}
+            >
+              关闭
+            </motion.button>
+          </div>
         </div>
         {error && <div className="mt-3 text-sm text-red-400">{error}</div>}
         {data?.truncated && <div className="mt-2 text-xs text-amber-300">文件超过 1MB，仅显示前 1MB</div>}

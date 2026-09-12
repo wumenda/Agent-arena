@@ -72,6 +72,16 @@ export default function MatchPage() {
     if (res.ok) router.push(`/match/${d.match.id}`);
   };
 
+  // 终态桌面通知：对局结束且已授权时弹出系统通知
+  useEffect(() => {
+    if (!["completed", "partial"].includes(matchStatus)) return;
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("对局已结束", { body: `对局 ${id} · ${matchStatus}` });
+      }
+    } catch {}
+  }, [matchStatus, id]);
+
   return (
     <main className="w-full space-y-4 p-6">
       <div className="flex items-center justify-between gap-4">
@@ -91,6 +101,15 @@ export default function MatchPage() {
           </AnimatePresence>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {typeof Notification !== "undefined" && Notification.permission === "default" && (
+            <button
+              className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+              title="对局结束时弹出系统通知"
+              onClick={() => Notification.requestPermission()}
+            >
+              通知
+            </button>
+          )}
           <a
             className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
             href={`/api/matches/${id}/report`}
