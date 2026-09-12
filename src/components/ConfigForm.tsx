@@ -11,10 +11,11 @@ type ComboRow = { id: number; harness: string; model: string };
 
 export default function ConfigForm({ initial }: { initial?: MatchConfig | null }) {
   const router = useRouter();
-  const nextId = useRef(1);
+  const initialCombos = initial?.combos ?? [{ harness: "claude-code", model: "sonnet" }];
+  const nextId = useRef(initialCombos.length + 1);
   const [prompt, setPrompt] = useState(initial?.prompt ?? "");
   const [combos, setCombos] = useState<ComboRow[]>(
-    (initial?.combos ?? [{ harness: "claude-code", model: "sonnet" }]).map((c) => ({ ...c, id: nextId.current++ }))
+    initialCombos.map((c, i) => ({ ...c, id: i + 1 }))
   );
   const [submitting, setSubmitting] = useState(false);
   const est = estimateCost(combos as Combo[]);

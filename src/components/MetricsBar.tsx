@@ -14,13 +14,13 @@ export default function MetricsBar({
   durationMs, tokensIn, tokensOut, costUsd, startedAt, running,
 }: { durationMs: number | null; tokensIn: number | null; tokensOut: number | null; costUsd: number | null;
      startedAt?: Date | string | null; running?: boolean }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     if (!running || !startedAt) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [running, startedAt]);
-  const liveMs = running && startedAt ? now - new Date(startedAt).getTime() : null;
+  const liveMs = running && startedAt && now != null ? now - new Date(startedAt).getTime() : null;
   const shown = liveMs ?? durationMs;
   const fmt = (ms: number) => ms > 60000 ? `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`;
   return (

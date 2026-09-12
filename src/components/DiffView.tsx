@@ -41,7 +41,7 @@ export default function DiffView({ events, matchId, run }: { events: ArenaEvent[
         </div>
       )}
       {viewing && (
-        <FileViewer matchId={matchId} runId={run.id} filePath={viewing} onClose={() => setViewing(null)} />
+        <FileViewer key={viewing} matchId={matchId} runId={run.id} filePath={viewing} onClose={() => setViewing(null)} />
       )}
     </motion.div>
   );

@@ -20,29 +20,40 @@ export default function RunDiff({ matchId, runs, onClose }: {
     return r ? `${r.harness} · ${r.model}` : id;
   };
 
+  // 切换 A/B 时在事件处理器中重置文件选择（避免在 effect 中同步 setState）
+  const switchRun = (which: "A" | "B", id: string) => {
+    if (which === "A") setRunA(id); else setRunB(id);
+    setFile(""); setContentA(null); setContentB(null);
+  };
+
   useEffect(() => {
     if (!runA || !runB) return;
-    setFile(""); setContentA(null); setContentB(null);
+    let cancelled = false;
     Promise.all([
       fetch(`/api/matches/${matchId}/file?runId=${runA}`).then((r) => r.json()),
       fetch(`/api/matches/${matchId}/file?runId=${runB}`).then((r) => r.json()),
     ]).then(([a, b]) => {
+      if (cancelled) return;
       setFilesA(a.files?.map((f: { path: string }) => f.path) ?? []);
       setFilesB(b.files?.map((f: { path: string }) => f.path) ?? []);
     });
+    return () => { cancelled = true; };
   }, [matchId, runA, runB]);
 
   const common = useMemo(() => filesA.filter((f) => filesB.includes(f)), [filesA, filesB]);
 
   useEffect(() => {
     if (!file || !runA || !runB) return;
+    let cancelled = false;
     Promise.all([
       fetch(`/api/matches/${matchId}/file?runId=${runA}&path=${encodeURIComponent(file)}`).then((r) => r.json()),
       fetch(`/api/matches/${matchId}/file?runId=${runB}&path=${encodeURIComponent(file)}`).then((r) => r.json()),
     ]).then(([a, b]) => {
+      if (cancelled) return;
       setContentA(a.content ?? "");
       setContentB(b.content ?? "");
     });
+    return () => { cancelled = true; };
   }, [matchId, runA, runB, file]);
 
   const diff: DiffLine[] | null = useMemo(
@@ -61,11 +72,11 @@ export default function RunDiff({ matchId, runs, onClose }: {
           <button className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20" onClick={onClose}>关闭</button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <select className={sel} value={runA} onChange={(e) => setRunA(e.target.value)}>
+          <select className={sel} value={runA} onChange={(e) => switchRun("A", e.target.value)}>
             {runs.map((r) => <option key={r.id} value={r.id}>A：{label(r.id)}</option>)}
           </select>
           <span className="text-white/30">vs</span>
-          <select className={sel} value={runB} onChange={(e) => setRunB(e.target.value)}>
+          <select className={sel} value={runB} onChange={(e) => switchRun("B", e.target.value)}>
             {runs.map((r) => <option key={r.id} value={r.id}>B：{label(r.id)}</option>)}
           </select>
           <select className={sel} value={file} onChange={(e) => setFile(e.target.value)} disabled={common.length === 0}>

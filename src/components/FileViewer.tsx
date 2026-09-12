@@ -10,11 +10,12 @@ export default function FileViewer({ matchId, runId, filePath, onClose }: {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setData(null); setError("");
+    let cancelled = false;
     fetch(`/api/matches/${matchId}/file?runId=${runId}&path=${encodeURIComponent(filePath)}`)
       .then((r) => r.json())
-      .then((d) => (d.error ? setError(d.error) : setData(d)))
-      .catch(() => setError("加载失败"));
+      .then((d) => { if (!cancelled) { if (d.error) setError(d.error); else setData(d); } })
+      .catch(() => { if (!cancelled) setError("加载失败"); });
+    return () => { cancelled = true; };
   }, [matchId, runId, filePath]);
 
   const isHtml = /\.html?$/i.test(filePath);
