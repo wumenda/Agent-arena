@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","model":"claude-sonnet-4-5-20250929"}
+{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"thinking","thinking":"先创建文件"}]}}
+{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Write","input":{"file_path":"hello.txt","content":"hi"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"File created successfully"}]}}
+{"type":"assistant","message":{"id":"msg_2","role":"assistant","content":[{"type":"text","text":"已创建 hello.txt"}]}}
+{"type":"result","subtype":"success","total_cost_usd":0.0123,"duration_ms":45000,"num_turns":3,"usage":{"input_tokens":120,"output_tokens":80}}
