@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import ModelSelect from "./ModelSelect";
@@ -8,6 +8,13 @@ import type { Combo, MatchConfig } from "@/lib/arena/types";
 
 // 组合行加稳定 id，供 AnimatePresence 追踪增删
 type ComboRow = { id: number; harness: string; model: string };
+
+// 快捷模板：combos 为纯配置（无 id），填充时经 nextId 生成 ComboRow
+const TEMPLATES: { name: string; combos: { harness: string; model: string }[] }[] = [
+  { name: "三 harness 全对比", combos: [{ harness: "claude-code", model: "glm-5.3-flash" }, { harness: "codex", model: "glm-5.3-flash" }, { harness: "opencode", model: "ark/glm-5.2" }] },
+  { name: "双雄对决", combos: [{ harness: "claude-code", model: "glm-5.3-flash" }, { harness: "codex", model: "glm-5.3-flash" }] },
+  { name: "单跑 OpenCode", combos: [{ harness: "opencode", model: "ark/glm-5.2" }] },
+];
 
 export default function ConfigForm({ initial }: { initial?: MatchConfig | null }) {
   const router = useRouter();
@@ -20,6 +27,26 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
   const [submitting, setSubmitting] = useState(false);
   const est = estimateCost(combos as Combo[]);
 
+  // 配置记忆：挂载时（无 initial 回显才）恢复上次组合；id 重新生成避免与 nextId 冲突
+  useEffect(() => {
+    if (initial?.combos?.length) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem("arena.lastCombos") ?? "null") as
+        | { harness: string; model: string }[]
+        | null;
+      if (Array.isArray(saved) && saved.length > 0) {
+        setCombos(saved.map((c) => ({ ...c, id: nextId.current++ })));
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // 变更持久化：剥离 id 只存纯配置
+  useEffect(() => {
+    try {
+      localStorage.setItem("arena.lastCombos", JSON.stringify(combos.map(({ harness, model }) => ({ harness, model }))));
+    } catch {}
+  }, [combos]);
+
   const start = async () => {
     setSubmitting(true);
     const res = await fetch("/api/matches", {
@@ -29,7 +56,16 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
     });
     const data = await res.json();
     setSubmitting(false);
-    if (res.ok) router.push(`/match/${data.match.id}`);
+    if (res.ok) {
+      // prompt 历史：去重、限 10 条，通知首页 chips 刷新
+      try {
+        const hist = JSON.parse(localStorage.getItem("arena.promptHistory") ?? "[]") as string[];
+        const next = [prompt, ...hist.filter((p) => p !== prompt)].slice(0, 10);
+        localStorage.setItem("arena.promptHistory", JSON.stringify(next));
+        window.dispatchEvent(new Event("arena:prompt-history"));
+      } catch {}
+      router.push(`/match/${data.match.id}`);
+    }
   };
 
   return (
@@ -64,6 +100,18 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
             </motion.div>
           ))}
         </AnimatePresence>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-white/40">模板：</span>
+          {TEMPLATES.map((t) => (
+            <button
+              key={t.name}
+              className="glass-input cursor-pointer rounded-full px-2.5 py-0.5 text-xs text-white/70 hover:text-white"
+              onClick={() => setCombos(t.combos.map((c) => ({ ...c, id: nextId.current++ })))}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
         <motion.button
           whileTap={{ scale: 0.95 }}
           className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"

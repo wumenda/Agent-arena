@@ -10,9 +10,22 @@ export default function Home() {
   const [config, setConfig] = useState<MatchConfig | null>(null);
   const [parseError, setParseError] = useState("");
   const [detect, setDetect] = useState<{ harness: string; installed: boolean; detail: string }[]>([]);
+  const [history, setHistory] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/detect").then((r) => r.json()).then((d) => setDetect(d.results ?? []));
+  }, []);
+
+  // prompt 历史：挂载加载一次 + ConfigForm 开跑后经事件刷新
+  useEffect(() => {
+    const load = () => {
+      try {
+        setHistory(JSON.parse(localStorage.getItem("arena.promptHistory") ?? "[]") as string[]);
+      } catch {}
+    };
+    load();
+    window.addEventListener("arena:prompt-history", load);
+    return () => window.removeEventListener("arena:prompt-history", load);
   }, []);
 
   const parse = async () => {
@@ -88,6 +101,21 @@ export default function Home() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
+        {history.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-white/40">最近：</span>
+            {history.slice(0, 5).map((p) => (
+              <button
+                key={p}
+                title={p}
+                className="glass-input max-w-56 cursor-pointer truncate rounded-full px-2.5 py-0.5 text-xs text-white/60 hover:text-white"
+                onClick={() => setInput(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <motion.button
             whileTap={{ scale: 0.95 }}
