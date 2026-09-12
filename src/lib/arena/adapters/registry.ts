@@ -2,6 +2,7 @@ import type { ArenaEvent, Combo, DetectResult, HarnessId } from "../types";
 
 export interface LineParser {
   parse(line: string): ArenaEvent[];
+  flush?(): ArenaEvent[]; // 流结束时由 runner 调用（codex 的 done 事件在 turn.completed 才有 usage，此时才能发出）
 }
 
 export interface SpawnCommand {
