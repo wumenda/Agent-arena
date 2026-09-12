@@ -1,4 +1,7 @@
 import type { ArenaEvent, Combo, DetectResult, HarnessId } from "../types";
+import { claudeCodeAdapter } from "./claude-code";
+import { codexAdapter } from "./codex";
+import { opencodeAdapter } from "./opencode";
 
 export interface LineParser {
   parse(line: string): ArenaEvent[];
@@ -21,3 +24,9 @@ export interface HarnessAdapter {
   buildCommand(combo: Combo, workdir: string): SpawnCommand;
   createParser(): LineParser;
 }
+
+export const adapters: Record<string, HarnessAdapter> = {
+  [claudeCodeAdapter.id]: claudeCodeAdapter,
+  [codexAdapter.id]: codexAdapter,
+  [opencodeAdapter.id]: opencodeAdapter,
+};
