@@ -5,9 +5,9 @@ export default function ModelSelect({
   value, onChange,
 }: { value: { harness: string; model: string }; onChange: (v: { harness: string; model: string }) => void }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-1 gap-2">
       <select
-        className="border rounded px-2 py-1 text-sm"
+        className="glass-input cursor-pointer rounded-xl px-2.5 py-1.5 text-sm text-white/90 transition focus:border-sky-400/50 focus:ring-2 focus:ring-sky-400/20 focus:outline-none [&>option]:bg-neutral-900"
         value={value.harness}
         onChange={(e) => {
           const h = e.target.value;
@@ -20,7 +20,7 @@ export default function ModelSelect({
         ))}
       </select>
       <input
-        className="border rounded px-2 py-1 text-sm flex-1"
+        className="glass-input min-w-0 flex-1 rounded-xl px-2.5 py-1.5 font-mono text-sm text-white/90 placeholder-white/30 transition focus:border-sky-400/50 focus:ring-2 focus:ring-sky-400/20 focus:outline-none"
         list={`models-${value.harness}`}
         value={value.model}
         onChange={(e) => onChange({ ...value, model: e.target.value })}

@@ -1,12 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import RunPanel from "@/components/RunPanel";
 import type { ArenaEvent } from "@/lib/arena/types";
 import type { RunRow } from "@/lib/db/schema";
 
+const STATUS_STYLE: Record<string, string> = {
+  pending: "bg-white/10 text-white/60",
+  running: "bg-sky-400/15 text-sky-300 animate-pulse",
+  completed: "bg-emerald-400/15 text-emerald-300",
+  failed: "bg-red-400/15 text-red-300",
+  timeout: "bg-amber-400/15 text-amber-300",
+};
+
 export default function MatchPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [events, setEvents] = useState<Record<string, ArenaEvent[]>>({});
   const [matchStatus, setMatchStatus] = useState("…");
@@ -48,20 +57,32 @@ export default function MatchPage() {
   const rerun = async () => {
     const res = await fetch(`/api/matches/${id}/rerun`, { method: "POST" });
     const d = await res.json();
-    if (res.ok) window.location.href = `/match/${d.match.id}`;
+    if (res.ok) router.push(`/match/${d.match.id}`);
   };
 
   return (
-    <main className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">对局 {id} · {matchStatus}</h1>
-        <button className="border rounded px-3 py-1 text-sm" onClick={rerun}>一键重跑（看方差）</button>
+    <main className="w-full space-y-4 p-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="truncate font-mono text-sm text-white/50">对局 {id}</h1>
+          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLE[matchStatus] ?? "bg-white/10 text-white/60"}`}>
+            {matchStatus}
+          </span>
+        </div>
+        <button
+          className="glass shrink-0 cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+          onClick={rerun}
+        >
+          一键重跑（看方差）
+        </button>
       </div>
-      <div className="flex gap-4 overflow-x-auto">
+      <div className="flex gap-4 overflow-x-auto pb-2">
         {runs.map((r) => (
           <RunPanel key={r.id} run={r} events={events[r.id] ?? []} />
         ))}
-        {runs.length === 0 && <div className="text-gray-500">等待运行启动…</div>}
+        {runs.length === 0 && (
+          <div className="glass rounded-3xl p-8 text-sm text-white/40">等待运行启动…</div>
+        )}
       </div>
     </main>
   );
