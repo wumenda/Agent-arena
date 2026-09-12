@@ -14,16 +14,38 @@ export default function RunDiff({ matchId, runs, onClose }: {
   const [file, setFile] = useState("");
   const [contentA, setContentA] = useState<string | null>(null);
   const [contentB, setContentB] = useState<string | null>(null);
+  const [mode, setMode] = useState<"text" | "visual">("text");
+  const [shot, setShot] = useState<{left: string; right: string; diff: string; diffCount: number} | null>(null);
+  const [shotLoading, setShotLoading] = useState(false);
+  const [shotError, setShotError] = useState("");
 
   const label = (id: string) => {
     const r = runs.find((x) => x.id === id);
     return r ? `${r.harness} · ${r.model}` : id;
   };
 
-  // 切换 A/B 时在事件处理器中重置文件选择（避免在 effect 中同步 setState）
+  // 切换 A/B 时在事件处理器中重置文件选择与视觉结果（避免在 effect 中同步 setState）
   const switchRun = (which: "A" | "B", id: string) => {
     if (which === "A") setRunA(id); else setRunB(id);
-    setFile(""); setContentA(null); setContentB(null);
+    setFile(""); setContentA(null); setContentB(null); setShot(null); setShotError("");
+  };
+
+  // 生成视觉对比：服务端用本机 Chrome 截两图 + pixelmatch 像素 diff
+  const genShot = async () => {
+    if (!file) return;
+    setShotLoading(true); setShotError(""); setShot(null);
+    try {
+      const res = await fetch(`/api/matches/${matchId}/screenshot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ left: { runId: runA, path: file }, right: { runId: runB, path: file } }),
+      });
+      const d = await res.json();
+      if (!res.ok) setShotError(d.error ?? "生成失败");
+      else setShot(d);
+    } finally {
+      setShotLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -83,15 +105,22 @@ export default function RunDiff({ matchId, runs, onClose }: {
             <option value="">{common.length === 0 ? "无同名产出文件" : "选择文件…"}</option>
             {common.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
+          <div className="flex overflow-hidden rounded-full bg-white/5 text-xs">
+            {(["text", "visual"] as const).map((m) => (
+              <button key={m} className={`cursor-pointer px-3 py-1 ${mode === m ? "bg-sky-400/20 text-sky-300" : "text-white/50 hover:text-white"}`} onClick={() => setMode(m)}>
+                {m === "text" ? "文本" : "视觉"}
+              </button>
+            ))}
+          </div>
         </div>
-        {diff && (
+        {mode === "text" && diff && (
           <div className="mt-2 text-[10px] text-white/40">
             <span className="text-red-300">− {label(runA)}</span>
             <span className="mx-2">·</span>
             <span className="text-emerald-300">+ {label(runB)}</span>
           </div>
         )}
-        {diff && (
+        {mode === "text" && diff && (
           <div className="mt-2 max-h-[60vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-3 font-mono text-xs">
             {diff.map((l, i) => (
               <div key={i} className={
@@ -102,6 +131,35 @@ export default function RunDiff({ matchId, runs, onClose }: {
                 <span className="whitespace-pre-wrap break-all">{l.text || " "}</span>
               </div>
             ))}
+          </div>
+        )}
+        {mode === "visual" && (
+          <div className="mt-3 space-y-3 overflow-auto">
+            {!file && <div className="text-xs text-white/40">先选择一个同名产出文件，再生成视觉对比。</div>}
+            {file && (
+              <div className="flex items-center gap-3">
+                <button
+                  className="cursor-pointer rounded-full bg-sky-400/20 px-4 py-1.5 text-xs text-sky-200 transition-colors duration-200 hover:bg-sky-400/30 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={shotLoading}
+                  onClick={genShot}
+                >
+                  {shotLoading ? "截图中…" : "生成视觉对比"}
+                </button>
+                {shot && <span className="text-xs text-white/50">差异像素：<span className="font-mono text-amber-300">{shot.diffCount}</span></span>}
+              </div>
+            )}
+            {shotError && <div className="rounded-xl bg-red-400/10 px-3 py-2 text-xs text-red-300">{shotError}</div>}
+            {shot && (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {([["A 原图", shot.left], ["像素差异", shot.diff], ["B 原图", shot.right]] as const).map(([t, img]) => (
+                  <div key={t} className="space-y-1">
+                    <div className="text-[10px] text-white/40">{t}</div>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- base64 data URI 场景不适用 next/image */}
+                    <img src={`data:image/png;base64,${img}`} alt={t} className="w-full rounded-xl border border-white/10" />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
