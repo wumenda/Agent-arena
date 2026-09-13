@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 题库是刻意带 bug 的示例/用户项目，独立于主工程代码风格，不参与 lint
+    "questions/**",
   ]),
   {
     // adapter 解析第三方 harness 的动态 JSONL、测试文件惯例豁免 no-explicit-any

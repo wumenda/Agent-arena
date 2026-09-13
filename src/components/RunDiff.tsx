@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { diffLines, type DiffLine } from "@/lib/arena/diff";
-import type { RunRow } from "@/lib/db/schema";
+import type { RunDTO } from "@/lib/db/schema";
+import GlassSelect from "./GlassSelect";
 
 // 双 Run 产出对比：选两个 Run + 同名产出文件，行级 diff（红=A 删除，绿=B 新增）
 export default function RunDiff({ matchId, runs, onClose }: {
-  matchId: string; runs: RunRow[]; onClose: () => void;
+  matchId: string; runs: RunDTO[]; onClose: () => void;
 }) {
   const [runA, setRunA] = useState(runs[0]?.id ?? "");
   const [runB, setRunB] = useState(runs[1]?.id ?? runs[0]?.id ?? "");
@@ -85,7 +86,6 @@ export default function RunDiff({ matchId, runs, onClose }: {
     [contentA, contentB]
   );
 
-  const sel = "glass-input cursor-pointer rounded-full px-3 py-1.5 text-xs text-white/85 outline-none";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6" onClick={onClose}>
       <div className="glass-strong flex max-h-[85vh] w-full max-w-5xl flex-col rounded-3xl p-5" onClick={(e) => e.stopPropagation()}>
@@ -94,17 +94,30 @@ export default function RunDiff({ matchId, runs, onClose }: {
           <button className="shrink-0 cursor-pointer rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20" onClick={onClose}>关闭</button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <select className={sel} value={runA} onChange={(e) => switchRun("A", e.target.value)}>
-            {runs.map((r) => <option key={r.id} value={r.id}>A：{label(r.id)}</option>)}
-          </select>
+          <GlassSelect
+            compact
+            value={runA}
+            onChange={(v) => switchRun("A", v)}
+            items={runs.map((r) => ({ value: r.id, label: `A：${label(r.id)}` }))}
+          />
           <span className="text-white/30">vs</span>
-          <select className={sel} value={runB} onChange={(e) => switchRun("B", e.target.value)}>
-            {runs.map((r) => <option key={r.id} value={r.id}>B：{label(r.id)}</option>)}
-          </select>
-          <select className={sel} value={file} onChange={(e) => setFile(e.target.value)} disabled={common.length === 0}>
-            <option value="">{common.length === 0 ? "无同名产出文件" : "选择文件…"}</option>
-            {common.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
+          <GlassSelect
+            compact
+            value={runB}
+            onChange={(v) => switchRun("B", v)}
+            items={runs.map((r) => ({ value: r.id, label: `B：${label(r.id)}` }))}
+          />
+          <GlassSelect
+            compact
+            value={file}
+            onChange={setFile}
+            disabled={common.length === 0}
+            className="max-w-64"
+            items={[
+              { value: "", label: common.length === 0 ? "无同名产出文件" : "选择文件…" },
+              ...common.map((f) => ({ value: f, label: f })),
+            ]}
+          />
           <div className="flex overflow-hidden rounded-full bg-white/5 text-xs">
             {(["text", "visual"] as const).map((m) => (
               <button key={m} className={`cursor-pointer px-3 py-1 ${mode === m ? "bg-sky-400/20 text-sky-300" : "text-white/50 hover:text-white"}`} onClick={() => setMode(m)}>

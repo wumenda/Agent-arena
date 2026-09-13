@@ -1,29 +1,28 @@
-import { NextRequest, NextResponse } from "next/server";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { getMatch, listRuns } from "@/lib/db";
-import { buildMatchReport } from "@/lib/arena/report";
-import type { ArenaEvent } from "@/lib/arena/types";
+import { NextResponse } from "next/server";
+import { listRuns } from "@/lib/db";
+import { buildMatchReport, buildMatchReportHtml } from "@/lib/arena/report";
+import { readTrajectory } from "@/lib/arena/files";
+import { withMatch } from "@/lib/arena/http";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const match = getMatch(id);
-  if (!match) return NextResponse.json({ error: "not found" }, { status: 404 });
+// 对局报告导出：format=html 导出自包含 HTML 单文件（最终回答完整不截断）；默认 markdown，full=1 时不截断
+export const GET = withMatch(({ req, id, match }) => {
   const runs = listRuns(id);
-  const eventsByRun: Record<string, ArenaEvent[]> = {};
-  for (const run of runs) {
-    try {
-      const traj = readFileSync(path.join(run.workdir, "trajectory.jsonl"), "utf8");
-      eventsByRun[run.id] = traj.split("\n").filter(Boolean).map((l) => JSON.parse(l));
-    } catch {
-      eventsByRun[run.id] = [];
-    }
+  const eventsByRun = Object.fromEntries(runs.map((r) => [r.id, readTrajectory(r.workdir)]));
+  if (req.nextUrl.searchParams.get("format") === "html") {
+    const html = buildMatchReportHtml(match, runs, eventsByRun);
+    return new NextResponse(html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Disposition": `attachment; filename="match-${id}.html"`,
+      },
+    });
   }
-  const md = buildMatchReport(match, runs, eventsByRun);
+  const full = req.nextUrl.searchParams.get("full") === "1";
+  const md = buildMatchReport(match, runs, eventsByRun, { full });
   return new NextResponse(md, {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
       "Content-Disposition": `attachment; filename="match-${id}.md"`,
     },
   });
-}
+});

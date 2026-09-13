@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>贪吃蛇</title>
+<style>
+  body { margin:0; display:grid; place-items:center; min-height:100vh; background:#111; color:#eee; font-family:system-ui,sans-serif; }
+  main { text-align:center; }
+  canvas { background:#1c1c1e; border-radius:12px; }
+  p { color:#888; font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>贪吃蛇 <span id="score">0</span></h1>
+  <canvas id="board" width="400" height="400"></canvas>
+  <p>方向键控制，撞墙或撞到自己结束；结束后按任意方向键重新开始</p>
+</main>
+<script>
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const CELL = 20, COLS = 20, ROWS = 20;
+
+let snake, dir, food, score, dead, timer;
+
+function reset() {
+  snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+  dir = { x: 1, y: 0 };
+  score = 0;
+  dead = false;
+  placeFood();
+  updateScore();
+  clearInterval(timer);
+  timer = setInterval(tick, 120);
+}
+
+function placeFood() {
+  do {
+    food = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+  } while (snake.some((s) => s.x === food.x && s.y === food.y));
+}
+
+function updateScore() { scoreEl.textContent = score; }
+
+function tick() {
+  if (dead) return;
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+  if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS) return gameOver();
+  if (snake.some((s) => s.x === head.x && s.y === head.y)) return gameOver();
+  const ate = head.x === food.x && head.y === food.y;
+  snake.unshift(head);
+  if (ate) { score += 10; updateScore(); placeFood(); }
+  snake.pop();
+  draw();
+}
+
+function gameOver() {
+  dead = true;
+  clearInterval(timer);
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#fff";
+  ctx.font = "24px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("游戏结束  得分 " + score, canvas.width / 2, canvas.height / 2);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ff5f57";
+  ctx.beginPath();
+  ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL / 2 - 3, 0, Math.PI * 2);
+  ctx.fill();
+  snake.forEach((s, i) => {
+    ctx.fillStyle = i === 0 ? "#5ac8fa" : "#30d158";
+    ctx.fillRect(s.x * CELL + 1, s.y * CELL + 1, CELL - 2, CELL - 2);
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  const map = {
+    ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
+    ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
+  };
+  const d = map[e.key];
+  if (!d) return;
+  e.preventDefault();
+  if (dead) { reset(); return; }
+  if (d.x !== -dir.x || d.y !== -dir.y) dir = d; // 禁止直接掉头
+});
+
+reset();
+draw();
+</script>
+</body>
+</html>

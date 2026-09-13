@@ -1,28 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { statSync } from "node:fs";
 import { MatchConfigSchema } from "@/lib/arena/types";
-import { createMatch, listMatches } from "@/lib/db";
+import { createMatch, listMatches, countMatches } from "@/lib/db";
 import { runMatch } from "@/lib/arena/runner";
+import { resolveQuestionDir } from "@/lib/arena/questions";
+import { jsonError, readJson } from "@/lib/arena/http";
 
-export async function GET() {
-  return NextResponse.json({ matches: listMatches() });
+export async function GET(req: NextRequest) {
+  // 分页：默认 200 条（个人工具历史列表足够）；offset 供历史页"加载更多"
+  const sp = req.nextUrl.searchParams;
+  const limit = Math.min(Number(sp.get("limit")) || 200, 200);
+  const offset = Math.max(Number(sp.get("offset")) || 0, 0);
+  const total = countMatches();
+  const matches = listMatches(limit, offset);
+  return NextResponse.json({ matches, total, hasMore: offset + matches.length < total });
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const parsed = MatchConfigSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-  // 题目项目路径必须存在且为目录（本地校验，防止开跑后才失败）
-  if (parsed.data.sourceDir) {
-    try {
-      if (!statSync(parsed.data.sourceDir).isDirectory()) throw new Error();
-    } catch {
-      return NextResponse.json({ error: { sourceDir: ["题目路径不存在或不是目录"] } }, { status: 400 });
+  const body = await readJson(req, MatchConfigSchema);
+  if (!body.ok) return body.res;
+  // 题库选题解析为题目目录（服务端定路径，客户端只传 bank+id，防路径注入；本地校验防开跑后才失败）
+  let sourceDir: string | undefined;
+  if (body.data.question) {
+    const dir = resolveQuestionDir(body.data.question.bank, body.data.question.id);
+    if (!dir) {
+      return jsonError("题库中找不到该题目，请重新选择", 400);
     }
+    sourceDir = dir;
   }
-  const match = createMatch(parsed.data);
+  const match = createMatch({ prompt: body.data.prompt, combos: body.data.combos, sourceDir });
   // 后台执行，不阻塞响应
   void runMatch(match.id);
   return NextResponse.json({ match }, { status: 201 });

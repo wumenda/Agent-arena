@@ -1,18 +1,7 @@
-import type { ArenaEvent, Combo } from "../types";
-import type { HarnessAdapter, LineParser } from "./registry";
+import type { Combo } from "../types";
+import type { HarnessAdapter } from "./registry";
+import { createClaudeFamilyParser } from "./claude-family";
 import { parseListOutput, runList, runVersion } from "./model-probe";
-
-const now = () => Date.now();
-
-// tool_result 的 content 可能是字符串或 content blocks 数组，统一抽取文本
-function blocksText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    const t = content.map((b: any) => (typeof b?.text === "string" ? b.text : "")).filter(Boolean).join("\n");
-    if (t) return t;
-  }
-  return JSON.stringify(content ?? "");
-}
 
 // Task 0 实测（qodercli 1.1.51，-o stream-json / -o json）：
 // 事件结构为 Claude Code 同构族（system/init → assistant → user/tool_result → result）。
@@ -43,58 +32,11 @@ export const qoderAdapter: HarnessAdapter = {
     cwd: workdir,
     shell: false,
   }),
-  createParser: (): LineParser => {
-    // result 行可能不带 errors/result 字段（错误详情在 synthetic assistant 消息里），兜底取最后一条 assistant 文本
-    let lastText = "";
-    const parse = (line: string): ArenaEvent[] => {
-      let j: any;
-      try { j = JSON.parse(line); } catch { return []; }
-      const out: ArenaEvent[] = [];
-      if (j.type === "system" && j.subtype === "init") {
-        out.push({ kind: "system", text: `init qodercli=${j.qodercli_version}`, ts: now() });
-      } else if (j.type === "assistant" && j.message?.content) {
-        for (const c of j.message.content) {
-          if (c.type === "text") {
-            if (c.text) lastText = c.text;
-            out.push({ kind: "message", text: c.text ?? "", ts: now() });
-          }
-          if (c.type === "thinking") out.push({ kind: "thinking", text: c.thinking ?? "", ts: now() });
-          if (c.type === "tool_use") {
-            out.push({ kind: "tool_call", tool: c.name, input: c.input, ts: now() });
-            if (c.name === "Write" || c.name === "Edit") {
-              out.push({ kind: "file_edit", path: String(c.input?.file_path ?? ""), ts: now() });
-            }
-          }
-        }
-      } else if (j.type === "user" && j.message?.content) {
-        for (const c of j.message.content) {
-          if (c.type === "tool_result") {
-            out.push({
-              kind: "tool_result",
-              tool: "",
-              output: blocksText(c.content),
-              isError: !!c.is_error,
-              ts: now(),
-            });
-          }
-        }
-      } else if (j.type === "result") {
-        if (j.is_error) {
-          out.push({ kind: "error", text: (j.errors ?? []).join("\n") || j.result || lastText, ts: now() });
-        }
-        out.push({
-          kind: "done",
-          usage: j.usage ? {
-            input: j.usage.input_tokens ?? 0,
-            output: j.usage.output_tokens ?? 0,
-            cacheRead: j.usage.cache_read_input_tokens ?? undefined,
-          } : undefined,
-          costUsd: j.total_cost_usd,
-          ts: now(),
-        });
-      }
-      return out;
-    };
-    return { parse };
-  },
+  // 同构族 parser；差异：仅 init 子类型入轨迹（hook_* 噪音丢弃）、is_error 兜底取最后一条 assistant 文本
+  createParser: () =>
+    createClaudeFamilyParser({
+      systemEvents: (j) => (j.subtype === "init" ? [{ text: `init qodercli=${j.qodercli_version}` }] : []),
+      // result 行可能不带 errors/result 字段（错误详情在 synthetic assistant 消息里）
+      errorText: (j, lastText) => (j.errors ?? []).join("\n") || j.result || lastText,
+    }),
 };

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>反应速度测试</title>
+<style>
+  body { margin:0; display:grid; place-items:center; min-height:100vh; background:#111; color:#eee; font-family:system-ui,sans-serif; text-align:center; }
+  #box { width:320px; height:200px; line-height:200px; border-radius:16px; font-size:22px; cursor:pointer; user-select:none; background:#2c2c2e; }
+  #box.wait { background:#5e5ce6; }
+  #box.go { background:#30d158; }
+  ul { list-style:none; padding:0; color:#888; }
+</style>
+</head>
+<body>
+<main>
+  <h1>反应速度测试</h1>
+  <div id="box">点击开始</div>
+  <ul id="history"></ul>
+</main>
+<script>
+const box = document.getElementById("box");
+const history = document.getElementById("history");
+const loadedAt = performance.now();
+let state = "idle"; // idle | waiting | green | done
+let greenAt = 0;
+let timer = null;
+
+function show(text, cls) {
+  box.textContent = text;
+  box.className = cls ?? "";
+}
+
+box.addEventListener("click", () => {
+  if (state === "idle" || state === "done") {
+    state = "waiting";
+    show("变绿后立刻点击…", "wait");
+    timer = setTimeout(() => {
+      greenAt = performance.now();
+      state = "green";
+      show("点！", "go");
+    }, 800 + Math.random() * 1700);
+  } else if (state === "waiting") {
+    clearTimeout(timer);
+    state = "done";
+    show("抢跑了，点击重试");
+  } else if (state === "green") {
+    const rt = Math.round(performance.now() - loadedAt);
+    state = "done";
+    show(rt + " ms，点击再来");
+    const li = document.createElement("li");
+    li.textContent = "第 " + (history.children.length + 1) + " 次：" + rt + " ms";
+    history.appendChild(li);
+  }
+});
+</script>
+</body>
+</html>

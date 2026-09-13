@@ -1,0 +1,12 @@
+{"type":"session","version":3,"id":"01a09a7e-3d20-7058-b398-74c41e80e823","timestamp":"2026-09-13T11:19:19.585Z","cwd":"D:/work/run1"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"assistant","content":[]}}
+{"type":"message_update","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"reasoning":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"分析任务"}}
+{"type":"tool_execution_start","toolCallId":"call_d03d3a89482a49a6a5384af7","toolName":"write","args":{"content":"Hello, World!\n","path":"hello.txt"}}
+{"type":"tool_execution_end","toolCallId":"call_d03d3a89482a49a6a5384af7","toolName":"write","result":{"content":[{"type":"text","text":"Successfully wrote to hello.txt"}]},"isError":false}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"分析任务","thinkingSignature":"reasoning_content"},{"type":"text","text":"已完成三步操作"}],"usage":{"input":147,"output":85,"cacheRead":10368,"cacheWrite":0,"reasoning":20,"totalTokens":10600,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}}
+{"type":"message_update","usage":{"input":147,"output":85,"cacheRead":10368,"cacheWrite":0,"reasoning":20,"totalTokens":10600,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"assistantMessageEvent":{"type":"text_end","contentIndex":1}}
+{"type":"turn_end","message":{"role":"assistant","content":[]},"toolResults":[]}
+{"type":"agent_end","messages":[]}
+{"type":"agent_settled"}

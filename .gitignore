@@ -38,6 +38,7 @@ yarn-error.log*
 
 # arena runtime data
 /.arena/
+.*/
 
 # typescript
 *.tsbuildinfo

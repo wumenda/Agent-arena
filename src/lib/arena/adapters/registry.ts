@@ -5,6 +5,7 @@ import { opencodeAdapter } from "./opencode";
 import { traeAdapter } from "./trae";
 import { codebuddyAdapter } from "./codebuddy";
 import { qoderAdapter } from "./qoder";
+import { piAdapter } from "./pi";
 
 export interface LineParser {
   parse(line: string): ArenaEvent[];
@@ -28,6 +29,8 @@ export interface HarnessAdapter {
   detect(): Promise<DetectResult>;
   /** prompt 为对局任务原文；不支持 stdin 读取的 harness（如 traecli）经 argv 传入 */
   buildCommand(combo: Combo, workdir: string, prompt?: string): SpawnCommand;
+  /** 会话续聊：在同 workdir 继续最近一次会话（可选能力，未实现的 harness UI 不展示续聊入口） */
+  buildContinueCommand?(combo: Combo, workdir: string, prompt?: string): SpawnCommand;
   createParser(): LineParser;
 }
 
@@ -38,4 +41,5 @@ export const adapters: Record<string, HarnessAdapter> = {
   [traeAdapter.id]: traeAdapter,
   [codebuddyAdapter.id]: codebuddyAdapter,
   [qoderAdapter.id]: qoderAdapter,
+  [piAdapter.id]: piAdapter,
 };

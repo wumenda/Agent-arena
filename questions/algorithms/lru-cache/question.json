@@ -1,0 +1,5 @@
+{
+  "title": "LRU 淘汰错了最常用的键",
+  "description": "容量满时淘汰的不是最久未使用的键：get/has 命中后没有刷新新鲜度。",
+  "prompt": "修复 src/lruCache.js 的 LRU 缓存：get/has 命中也要把该键刷新为最新使用，容量满时 set 应淘汰最久未使用的键。保持现有 API（get/has/set）与容量校验不变。不要修改测试文件，修完运行 npm test，全部用例需通过。"
+}

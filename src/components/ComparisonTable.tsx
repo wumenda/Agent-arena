@@ -1,17 +1,16 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { RunRow } from "@/lib/db/schema";
+import type { RunDTO } from "@/lib/db/schema";
+import { fmtDuration } from "@/lib/format";
 
 type SortKey = "duration" | "tokensIn" | "tokensOut" | "cost";
 
-const fmt = (ms: number) => ms > 60000 ? `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`;
-
 // 对局结束后的指标汇总表：列可排序，completed 中的最优值（越低越好）高亮
-export default function ComparisonTable({ runs }: { runs: RunRow[] }) {
+export default function ComparisonTable({ runs }: { runs: RunDTO[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("duration");
   const [asc, setAsc] = useState(true);
 
-  const get = (r: RunRow) =>
+  const get = (r: RunDTO) =>
     (sortKey === "duration" ? r.durationMs : sortKey === "cost" ? r.costUsd : sortKey === "tokensIn" ? r.tokensIn : r.tokensOut)
     ?? Number.POSITIVE_INFINITY;
 
@@ -23,7 +22,7 @@ export default function ComparisonTable({ runs }: { runs: RunRow[] }) {
 
   const best = useMemo(() => {
     const done = runs.filter((r) => r.status === "completed");
-    const min = (f: (r: RunRow) => number | null) => {
+    const min = (f: (r: RunDTO) => number | null) => {
       const vals = done.map(f).filter((v): v is number => v != null);
       return vals.length ? Math.min(...vals) : null;
     };
@@ -74,7 +73,7 @@ export default function ComparisonTable({ runs }: { runs: RunRow[] }) {
               <td className="px-3 py-2 font-sans whitespace-nowrap text-white/85">{r.harness} · {r.model}</td>
               <td className="px-3 py-2 font-sans text-white/50">{r.status}</td>
               <td className={`px-3 py-2 text-right whitespace-nowrap ${isBest(r.durationMs, best.duration) ? "text-emerald-300" : "text-white/60"}`}>
-                {r.durationMs != null ? fmt(r.durationMs) : "—"}
+                {r.durationMs != null ? fmtDuration(r.durationMs) : "—"}
               </td>
               <td className={`px-3 py-2 text-right ${isBest(r.tokensIn, best.tokensIn) ? "text-emerald-300" : "text-white/60"}`}>{r.tokensIn ?? "—"}</td>
               <td className={`px-3 py-2 text-right ${isBest(r.tokensOut, best.tokensOut) ? "text-emerald-300" : "text-white/60"}`}>{r.tokensOut ?? "—"}</td>

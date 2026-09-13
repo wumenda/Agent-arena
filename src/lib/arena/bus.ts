@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
+import type { RunDTO } from "@/lib/db/schema";
 import type { ArenaEvent } from "./types";
 
 export type BusEvent =
-  | { channel: "run-status"; matchId: string; runId: string; status: string; error?: string }
+  | { channel: "run-status"; matchId: string; runId: string; status: string; error?: string; run: RunDTO }
   | { channel: "run-event"; matchId: string; runId: string; event: ArenaEvent }
   | { channel: "match-status"; matchId: string; status: string };
 

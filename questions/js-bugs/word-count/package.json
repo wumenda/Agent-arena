@@ -1,0 +1,8 @@
+{
+  "name": "word-count-bug",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

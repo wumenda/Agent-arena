@@ -43,6 +43,21 @@ describe("opencode adapter", () => {
     expect((evs[1] as any).path).toBe("D:/run/x.html");
   });
 
+  it("surfaces error envelopes as error events（模型 ID 无法解析等静默失败场景）", () => {
+    const parser = opencodeAdapter.createParser();
+    const evs = parser.parse(JSON.stringify({
+      type: "error",
+      timestamp: 1,
+      sessionID: "ses_x",
+      error: { name: "UnknownError", data: { message: "Unexpected server error. Check server logs for details.", ref: "err_x" } },
+    }));
+    expect(evs).toHaveLength(1);
+    expect(evs[0].kind).toBe("error");
+    expect((evs[0] as any).text).toContain("Unexpected server error");
+    // flush 仍以 done 收尾，保证轨迹完整
+    expect(parser.flush?.()[0].kind).toBe("done");
+  });
+
   it("builds run command with model and json format", () => {
     const cmd = opencodeAdapter.buildCommand({ harness: "opencode", model: "ark/glm-5.2" }, "D:/tmp/run3");
     expect(cmd.file).toBe("opencode");
@@ -50,5 +65,12 @@ describe("opencode adapter", () => {
     expect(cmd.args).toContain("--model");
     expect(cmd.args).toContain("--format");
     expect(cmd.args).toContain("json");
+  });
+
+  it("builds continue command with --continue（会话续聊）", () => {
+    const cmd = opencodeAdapter.buildContinueCommand!({ harness: "opencode", model: "agentplan/glm-5.3-flash" }, "D:/tmp/run3");
+    expect(cmd.file).toBe("opencode");
+    expect(cmd.args).toContain("--continue");
+    expect(cmd.stdin).toBe("__PROMPT__");
   });
 });

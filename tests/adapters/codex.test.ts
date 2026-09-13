@@ -49,4 +49,13 @@ describe("codex adapter", () => {
     expect(cmd.args).toContain("workspace-write");
     expect(cmd.cwd).toBe("D:/tmp/run2");
   });
+
+  it("builds continue command via exec resume --last（会话续聊）", () => {
+    const cmd = codexAdapter.buildContinueCommand!({ harness: "codex", model: "gpt-5.2-codex" }, "D:/tmp/run2");
+    expect(cmd.file).toBe("codex");
+    expect(cmd.args[0]).toBe("exec");
+    expect(cmd.args).toContain("resume");
+    expect(cmd.args).toContain("--last");
+    expect(cmd.stdin).toBe("__PROMPT__");
+  });
 });

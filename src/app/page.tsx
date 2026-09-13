@@ -8,6 +8,8 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [parsing, setParsing] = useState(false);
   const [config, setConfig] = useState<MatchConfig | null>(null);
+  // 解析成功次数：作为 ConfigForm 的 key，强制以新 initial 重新挂载（useState 初始值只在挂载时生效）
+  const [configSeq, setConfigSeq] = useState(0);
   const [parseError, setParseError] = useState("");
   const [detect, setDetect] = useState<{ harness: string; installed: boolean; detail: string; models?: string[] }[]>([]);
   const [history, setHistory] = useState<string[]>([]);
@@ -48,8 +50,10 @@ export default function Home() {
     });
     const data = await res.json();
     setParsing(false);
-    if (data.config) setConfig(data.config);
-    else setParseError("解析失败，请手动配置（或检查 .env.local 的 ARK_* 配置）");
+    if (res.ok && data.config) {
+      setConfig(data.config);
+      setConfigSeq((s) => s + 1);
+    } else setParseError(data.error ?? "解析失败，请手动配置");
   };
 
   return (
@@ -163,7 +167,7 @@ export default function Home() {
         transition={{ delay: 0.2 }}
         className="glass-strong rounded-3xl p-5"
       >
-        <ConfigForm initial={config} modelsByHarness={modelsByHarness} onRefreshModels={() => refreshDetect(true)} />
+        <ConfigForm key={configSeq} initial={config} modelsByHarness={modelsByHarness} onRefreshModels={() => refreshDetect(true)} />
       </motion.section>
     </main>
   );

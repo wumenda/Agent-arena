@@ -3,14 +3,12 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import FileViewer from "./FileViewer";
 import type { ArenaEvent } from "@/lib/arena/types";
-import type { RunRow } from "@/lib/db/schema";
+import type { RunDTO } from "@/lib/db/schema";
 
-export default function DiffView({ events, matchId, run }: { events: ArenaEvent[]; matchId: string; run: RunRow }) {
+export default function DiffView({ events, matchId, run }: { events: ArenaEvent[]; matchId: string; run: RunDTO }) {
   const [viewing, setViewing] = useState<string | null>(null);
-  // 事件里的路径可能是绝对路径（在 workdir 内），转成相对路径再请求文件 API
-  const relativize = (p: string) =>
-    p.startsWith(run.workdir) ? p.slice(run.workdir.length).replace(/^[\\/]+/, "") : p;
-  const files = [...new Set(events.filter((e) => e.kind === "file_edit").map((e) => relativize((e as { path: string }).path)))];
+  // 事件里的文件路径可能是绝对路径（workdir 内）：文件 API 服务端 safeResolveFile 做包含校验，直接透传即可
+  const files = [...new Set(events.filter((e) => e.kind === "file_edit").map((e) => (e as { path: string }).path))];
   const finalMessage = [...events].reverse().find((e) => e.kind === "message") as { text: string } | undefined;
   return (
     <motion.div

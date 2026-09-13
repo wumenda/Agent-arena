@@ -49,6 +49,9 @@ function Collapsible({ label, tone, body, mono = true, defaultOpen = false }: {
   );
 }
 
+/** 警告/错误的单行摘要：取首行，超长由 truncate 截断 */
+const firstLine = (text: string) => text.split("\n", 1)[0] || text;
+
 function EventBlock({ e }: { e: ArenaEvent }) {
   switch (e.kind) {
     case "message":
@@ -56,6 +59,9 @@ function EventBlock({ e }: { e: ArenaEvent }) {
       return (
         <Collapsible label="回复" tone="text-white/85 font-medium" body={e.text} mono={false} defaultOpen />
       );
+    case "user":
+      // 用户在卡片输入框追加的提问（会话续聊），与助手回复区分
+      return <Collapsible label="追问" tone="text-amber-200" body={e.text} mono={false} defaultOpen />;
     case "thinking":
       return <Collapsible label={`思考（${e.text.length} 字）`} tone="text-violet-300" body={e.text} />;
     case "tool_call":
@@ -86,8 +92,11 @@ function EventBlock({ e }: { e: ArenaEvent }) {
       );
     case "file_edit":
       return <div className="font-mono text-xs leading-5 text-sky-300">编辑文件 {e.path}</div>;
+    case "warn":
+      // 默认折叠只显示一行摘要，点击展开看全文
+      return <Collapsible label={`警告：${firstLine(e.text)}`} tone="text-amber-300" body={e.text} />;
     case "error":
-      return <div className="whitespace-pre-wrap font-mono text-xs leading-5 text-red-300">错误：{e.text}</div>;
+      return <Collapsible label={`错误：${firstLine(e.text)}`} tone="text-red-300" body={e.text} />;
     case "done":
       return (
         <div className="font-mono text-xs leading-5 text-emerald-300/80">
@@ -106,7 +115,7 @@ function EventBlock({ e }: { e: ArenaEvent }) {
 
 export default function TrajectoryView({ events }: { events: ArenaEvent[] }) {
   const boxRef = useRef<HTMLDivElement>(null);
-  // 系统调试日志（CLI 的 stderr INFO 行、init 通知等）不进对话流：留档于 trajectory.jsonl，真错误以 error 事件上屏
+  // 系统调试日志（CLI 的 stderr INFO 行、init 通知等）不进对话流：留档于 trajectory.jsonl，警告以 warn（黄）、真错误以 error（红）事件上屏
   const visible = events.filter((e) => e.kind !== "system");
   // 新事件到达时自动滚动到底部（用户向上翻阅时不打断）
   useEffect(() => {

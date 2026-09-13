@@ -24,6 +24,14 @@ export const codexAdapter: HarnessAdapter = {
     cwd: workdir,
     stdin: "__PROMPT__", // runner 会把该占位符替换为对局 prompt（经 stdin 传入；Task 0 实测 `-` 可用）
   }),
+  // 会话续聊：resume --last 恢复该 cwd 最近一次会话（codex 会话按 cwd 过滤）。
+  // resume 子命令不支持 --sandbox，沿用原会话的沙箱策略（首轮已按 workspace-write 落盘）
+  buildContinueCommand: (combo, workdir) => ({
+    file: "codex",
+    args: ["exec", "resume", "--last", "--json", "-m", combo.model, "--skip-git-repo-check", "-"],
+    cwd: workdir,
+    stdin: "__PROMPT__",
+  }),
   createParser(): LineParser {
     let pendingUsage: { input: number; output: number; cacheRead: number } | undefined;
     const parse = (j: any): ArenaEvent[] => {

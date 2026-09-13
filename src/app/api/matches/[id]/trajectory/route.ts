@@ -1,19 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { getMatch, listRuns } from "@/lib/db";
+import { NextResponse } from "next/server";
+import { getRunOfMatch } from "@/lib/db";
+import { readTrajectory } from "@/lib/arena/files";
+import { jsonError, withMatch } from "@/lib/arena/http";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const match = getMatch(id);
-  if (!match) return NextResponse.json({ error: "not found" }, { status: 404 });
+// ?runId=x → 该运行的轨迹事件（缺失或损坏兜底空数组，前端可静态渲染已完成部分）
+export const GET = withMatch(({ req, id }) => {
   const runId = req.nextUrl.searchParams.get("runId");
-  const run = listRuns(id).find((r) => r.id === runId);
-  if (!run) return NextResponse.json({ error: "run not found" }, { status: 404 });
-  try {
-    const traj = readFileSync(path.join(run.workdir, "trajectory.jsonl"), "utf8");
-    return NextResponse.json({ events: traj.split("\n").filter(Boolean).map((l) => JSON.parse(l)) });
-  } catch {
-    return NextResponse.json({ events: [] });
-  }
-}
+  const run = getRunOfMatch(id, runId ?? "");
+  if (!run) return jsonError("运行不存在", 404);
+  return NextResponse.json({ events: readTrajectory(run.workdir) });
+});

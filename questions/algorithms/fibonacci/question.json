@@ -1,0 +1,5 @@
+{
+  "title": "斐波那契数列整体错位",
+  "description": "fib(1)、fib(2) 应为 1，当前实现却返回 0，整条数列错一位。",
+  "prompt": "修复 src/fibonacci.js：斐波那契定义 fib(1) = fib(2) = 1、fib(n) = fib(n-1) + fib(n-2)，当前实现对小下标返回错误值导致整条数列错位。不要修改测试文件，修完运行 npm test，全部用例需通过。"
+}

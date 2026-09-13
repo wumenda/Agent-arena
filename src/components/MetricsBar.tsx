@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fmtDuration } from "@/lib/format";
 
 function Icon({ d }: { d: string }) {
   return (
@@ -22,12 +23,11 @@ export default function MetricsBar({
   }, [running, startedAt]);
   const liveMs = running && startedAt && now != null ? now - new Date(startedAt).getTime() : null;
   const shown = liveMs ?? durationMs;
-  const fmt = (ms: number) => ms > 60000 ? `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`;
   return (
     <div className="glass no-scrollbar flex flex-nowrap items-center justify-between gap-2 overflow-x-auto whitespace-nowrap rounded-full px-3 py-1.5 font-mono text-xs text-white/60">
       <span className={`flex shrink-0 items-center gap-1.5 ${running ? "text-sky-300" : ""}`} title="耗时">
         <Icon d="M12 6v6l4 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z" />
-        {shown != null ? fmt(shown) : "—"}
+        {shown != null ? fmtDuration(shown) : "—"}
       </span>
       <span className="flex shrink-0 items-center gap-1.5" title="tokens 输入 → 输出">
         <Icon d="m17 11-5-5-5 5M17 18l-5 5-5-5" />

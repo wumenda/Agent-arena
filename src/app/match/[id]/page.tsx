@@ -5,10 +5,9 @@ import { AnimatePresence, motion } from "motion/react";
 import RunPanel from "@/components/RunPanel";
 import RunDiff from "@/components/RunDiff";
 import ComparisonTable from "@/components/ComparisonTable";
-import LineageChart from "@/components/LineageChart";
 import PreviewGrid from "@/components/PreviewGrid";
 import type { ArenaEvent } from "@/lib/arena/types";
-import type { RunRow } from "@/lib/db/schema";
+import type { RunDTO } from "@/lib/db/schema";
 
 const STATUS_STYLE: Record<string, string> = {
   pending: "bg-white/10 text-white/60",
@@ -20,7 +19,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function MatchPage() {
   const { id } = useParams<{ id: string }>();
-  const [runs, setRuns] = useState<RunRow[]>([]);
+  const [runs, setRuns] = useState<RunDTO[]>([]);
   const [events, setEvents] = useState<Record<string, ArenaEvent[]>>({});
   const [matchStatus, setMatchStatus] = useState("…");
   const [showDiff, setShowDiff] = useState(false);
@@ -28,6 +27,15 @@ export default function MatchPage() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   // 重跑后原地刷新：重挂数据流（重新拉 runs + 重连 SSE），不再跳转新对局页
   const [reloadTick, setReloadTick] = useState(0);
+  // 通知权限只在客户端读取（服务端无 Notification），挂载后微任务中同步一次，避免水合不一致
+  const [notifyPermission, setNotifyPermission] = useState<NotificationPermission | null>(null);
+  // SSE 连接状态：断流时提示用户（轮询兜底仍在，但实时性下降）
+  const [sseConnected, setSseConnected] = useState<boolean | null>(null);
+  useEffect(() => {
+    queueMicrotask(() => {
+      if (typeof Notification !== "undefined") setNotifyPermission(Notification.permission);
+    });
+  }, []);
 
   useEffect(() => {
     const doneRef = { current: false };
@@ -38,7 +46,7 @@ export default function MatchPage() {
       if (res.ok) {
         const { match, runs } = await res.json();
         setRuns(runs);
-        runs.forEach((r: RunRow) => knownIds.add(r.id));
+        runs.forEach((r: RunDTO) => knownIds.add(r.id));
         setMatchStatus(match.status);
         if (["completed", "partial"].includes(match.status)) doneRef.current = true;
         // 兜底回放：拉历史轨迹（刷新/断流后仍有数据）
@@ -54,6 +62,8 @@ export default function MatchPage() {
     load();
     const poll = setInterval(() => { if (!doneRef.current) load(); }, 5000);
     const es = new EventSource(`/api/matches/${id}/stream`);
+    es.onopen = () => setSseConnected(true);
+    es.onerror = () => setSseConnected(false); // EventSource 自动重连，重连成功后 onopen 会复位
     es.onmessage = (m) => {
       const e = JSON.parse(m.data);
       if (e.channel === "run-event") {
@@ -64,7 +74,8 @@ export default function MatchPage() {
           knownIds.add(e.runId);
           load();
         }
-        setRuns((prev) => prev.map((r) => (r.id === e.runId ? { ...r, status: e.status, error: e.error ?? r.error } : r)));
+        // 事件直接携带完整运行 DTO（终态前指标/验证已落库），整行合并，无需终态补拉
+        setRuns((prev) => prev.map((r) => (r.id === e.runId ? (e.run ?? { ...r, status: e.status, error: e.error ?? r.error }) : r)));
       } else if (e.channel === "match-status") {
         setMatchStatus(e.status);
         if (e.status === "running") doneRef.current = false; // 重跑/首轮启动：恢复轮询直到终态
@@ -120,13 +131,24 @@ export default function MatchPage() {
               {matchStatus}
             </motion.span>
           </AnimatePresence>
+          {/* SSE 连接徽章：绿=实时推送中；红=断流（5s 轮询兜底，EventSource 自动重连） */}
+          {sseConnected !== null && (
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${
+                sseConnected ? "bg-emerald-400/10 text-emerald-300/70" : "bg-amber-400/15 text-amber-300"
+              }`}
+              title={sseConnected ? "实时推送连接正常" : "实时推送断开，已切换 5 秒轮询兜底，EventSource 正在自动重连"}
+            >
+              {sseConnected ? "实时" : "重连中"}
+            </span>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {typeof Notification !== "undefined" && Notification.permission === "default" && (
+          {notifyPermission === "default" && (
             <button
               className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white"
               title="对局结束时弹出系统通知"
-              onClick={() => Notification.requestPermission()}
+              onClick={async () => setNotifyPermission(await Notification.requestPermission())}
             >
               通知
             </button>
@@ -136,6 +158,13 @@ export default function MatchPage() {
             href={`/api/matches/${id}/report`}
           >
             导出报告
+          </a>
+          <a
+            className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white"
+            title="自包含单文件，浏览器直接打开，最终回答完整不截断"
+            href={`/api/matches/${id}/report?format=html`}
+          >
+            导出 HTML
           </a>
           <button
             className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -156,8 +185,6 @@ export default function MatchPage() {
         </div>
       </div>
       {["completed", "partial"].includes(matchStatus) && runs.length > 0 && <ComparisonTable runs={runs} />}
-      <LineageChart matchId={id} />
-      <PreviewGrid matchId={id} runs={runs} live={matchStatus === "running"} />
       {/* 卡片 tab 导航：点击平滑滚动到对应卡片，无需拖滚动条 */}
       {runs.length > 0 && (
         <div className="no-scrollbar flex items-center gap-2 overflow-x-auto">
@@ -186,6 +213,7 @@ export default function MatchPage() {
           <div className="glass rounded-3xl p-8 text-sm text-white/40">等待运行启动…</div>
         )}
       </div>
+      <PreviewGrid matchId={id} runs={runs} live={matchStatus === "running"} />
       {showDiff && <RunDiff matchId={id} runs={runs} onClose={() => setShowDiff(false)} />}
     </main>
   );

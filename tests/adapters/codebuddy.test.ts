@@ -24,6 +24,7 @@ describe("codebuddy adapter", () => {
     expect(done.usage?.cacheRead).toBe(68800);
     const tr = events.find((e) => e.kind === "tool_result")!;
     expect(tr.output).toContain("Successfully created"); // content blocks 数组抽取文本
+    expect(tr.tool).toBe("Write"); // 经 tool_use_id 回填工具名
     const fe = events.find((e) => e.kind === "file_edit")!;
     expect(fe.path).toContain("hello.txt");
   });

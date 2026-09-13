@@ -3,17 +3,35 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import ModelSelect from "./ModelSelect";
-import { estimateCost } from "@/lib/arena/estimator";
+import GlassSelect from "./GlassSelect";
+import { estimateCost, estimateCostFromHistory, type ComboHistoryStat } from "@/lib/arena/estimator";
 import type { Combo, MatchConfig } from "@/lib/arena/types";
+import type { BankSummary } from "@/lib/arena/questions";
 
 // 组合行加稳定 id，供 AnimatePresence 追踪增删
 type ComboRow = { id: number; harness: string; model: string };
 
+// API 错误兼容两种形态：zod flatten 对象（{ formErrors, fieldErrors } 或 { 字段: [消息] }）与普通字符串
+function formatError(data: unknown, status: number): string {
+  const err = (data as { error?: unknown } | null)?.error;
+  if (typeof err === "string" && err) return err;
+  if (err && typeof err === "object") {
+    const parts: string[] = [];
+    for (const [field, msgs] of Object.entries(err as Record<string, unknown>)) {
+      if (Array.isArray(msgs)) {
+        for (const m of msgs) parts.push(typeof m === "string" ? (field === "formErrors" ? m : `${field}: ${m}`) : String(m));
+      }
+    }
+    if (parts.length) return parts.join("；");
+  }
+  return `创建对局失败（HTTP ${status}）`;
+}
+
 // 快捷模板：combos 为纯配置（无 id），填充时经 nextId 生成 ComboRow
 const TEMPLATES: { name: string; combos: { harness: string; model: string }[] }[] = [
-  { name: "三 harness 全对比", combos: [{ harness: "claude-code", model: "glm-5.3-flash" }, { harness: "codex", model: "glm-5.3-flash" }, { harness: "opencode", model: "ark/glm-5.2" }] },
+  { name: "三 harness 全对比", combos: [{ harness: "claude-code", model: "glm-5.3-flash" }, { harness: "codex", model: "glm-5.3-flash" }, { harness: "opencode", model: "agentplan/glm-5.3-flash" }] },
   { name: "双雄对决", combos: [{ harness: "claude-code", model: "glm-5.3-flash" }, { harness: "codex", model: "glm-5.3-flash" }] },
-  { name: "单跑 OpenCode", combos: [{ harness: "opencode", model: "ark/glm-5.2" }] },
+  { name: "单跑 OpenCode", combos: [{ harness: "opencode", model: "agentplan/glm-5.3-flash" }] },
 ];
 
 export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }: {
@@ -25,14 +43,34 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
   const initialCombos = initial?.combos ?? [{ harness: "claude-code", model: "sonnet" }];
   const nextId = useRef(initialCombos.length + 1);
   const [prompt, setPrompt] = useState(initial?.prompt ?? "");
-  const [sourceDir, setSourceDir] = useState(initial?.sourceDir ?? "");
+  const [banks, setBanks] = useState<BankSummary[]>([]);
+  const [bankId, setBankId] = useState(initial?.question?.bank ?? "");
+  const [questionId, setQuestionId] = useState(initial?.question?.id ?? "");
   const [combos, setCombos] = useState<ComboRow[]>(
     initialCombos.map((c, i) => ({ ...c, id: i + 1 }))
   );
   const [submitting, setSubmitting] = useState(false);
-  const est = estimateCost(combos as Combo[]);
+  const [error, setError] = useState("");
+  // 组合历史实测均值：加载后估算从 tier 区间升级为 tokens×单价 精算
+  const [history, setHistory] = useState<ComboHistoryStat[]>([]);
+  useEffect(() => {
+    fetch("/api/stats").then((r) => r.json()).then((d) => setHistory(d.stats ?? [])).catch(() => {});
+  }, []);
+  const histEst = estimateCostFromHistory(combos as Combo[], history);
+  const est = histEst.precise === combos.length ? { low: histEst.low, high: histEst.high } : estimateCost(combos as Combo[]);
+  const allPrecise = combos.length > 0 && histEst.precise === combos.length;
   // 模型只能从本地已配置列表选择；存在未选模型的组合时拦截开跑
   const missingModel = combos.some((c) => !c.model.trim());
+  const bank = banks.find((b) => b.id === bankId);
+  const question = bank?.questions.find((q) => q.id === questionId);
+
+  // 题库列表：内置题库 + 用户自放题库（.arena/questions），挂载加载一次
+  useEffect(() => {
+    fetch("/api/questions")
+      .then((r) => r.json())
+      .then((d) => setBanks(d.banks ?? []))
+      .catch(() => {});
+  }, []);
 
   // 配置记忆：挂载时（无 initial 回显才）恢复上次组合；id 重新生成避免与 nextId 冲突
   useEffect(() => {
@@ -56,18 +94,22 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
 
   const start = async () => {
     setSubmitting(true);
-    const res = await fetch("/api/matches", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        combos: combos.map(({ harness, model }) => ({ harness, model })),
-        ...(sourceDir.trim() ? { sourceDir: sourceDir.trim() } : {}),
-      }),
-    });
-    const data = await res.json();
-    setSubmitting(false);
-    if (res.ok) {
+    setError("");
+    try {
+      const res = await fetch("/api/matches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          combos: combos.map(({ harness, model }) => ({ harness, model })),
+          ...(bankId && questionId ? { question: { bank: bankId, id: questionId } } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.match?.id) {
+        setError(formatError(data, res.status));
+        return;
+      }
       // prompt 历史：去重、限 10 条，通知首页 chips 刷新
       try {
         const hist = JSON.parse(localStorage.getItem("arena.promptHistory") ?? "[]") as string[];
@@ -76,6 +118,10 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
         window.dispatchEvent(new Event("arena:prompt-history"));
       } catch {}
       router.push(`/match/${data.match.id}`);
+    } catch {
+      setError("网络异常：无法连接本地服务，请确认 dev 服务仍在运行");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -89,12 +135,53 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
       />
-      <input
-        className="glass-input w-full rounded-xl px-3 py-2 font-mono text-xs text-white/90 placeholder-white/30 transition focus:border-sky-400/50 focus:ring-2 focus:ring-sky-400/20 focus:outline-none"
-        placeholder="题目项目路径（可选）：填一个含 bug 的项目目录，会各复制一份到每个 agent 的独立工作目录"
-        value={sourceDir}
-        onChange={(e) => setSourceDir(e.target.value)}
-      />
+      <div className="space-y-1.5">
+        <div className="flex gap-2">
+          <GlassSelect
+            className="min-w-0 flex-1"
+            value={bankId}
+            onChange={(v) => { setBankId(v); setQuestionId(""); }}
+            items={[
+              { value: "", label: "不使用题库（自由任务）" },
+              ...(["builtin", "user"] as const).flatMap((src) => {
+                const group = banks.filter((b) => b.source === src);
+                return group.length
+                  ? [{
+                      label: src === "builtin" ? "内置题库" : "我的题库",
+                      options: group.map((b) => ({ value: b.id, label: `${b.name}（${b.questions.length} 题）` })),
+                    }]
+                  : [];
+              }),
+            ]}
+          />
+          <GlassSelect
+            className="min-w-0 flex-1"
+            value={questionId}
+            disabled={!bank}
+            onChange={(v) => {
+              const q = bank?.questions.find((x) => x.id === v);
+              setQuestionId(v);
+              if (q?.prompt) setPrompt(q.prompt); // 题目自带任务描述：直接填入提示词，仍可编辑
+            }}
+            items={[
+              { value: "", label: bank ? "选择一道题…" : "先选题库" },
+              ...(bank?.questions.map((q) => ({
+                value: q.id,
+                label: `${q.title}（${q.hasTest ? "带测试" : "无测试"}）`,
+              })) ?? []),
+            ]}
+          />
+        </div>
+        {question && (
+          <div className="text-xs text-white/50">
+            {question.description && <span>{question.description} </span>}
+            <span className="text-white/30">{question.hasTest ? "自带测试套件，跑完自动验证修复" : "无自动化测试，对比产出与轨迹"}</span>
+          </div>
+        )}
+        <div className="text-xs text-white/30">
+          自定义题库：把题目放进 <span className="font-mono">.arena/questions/题库/题目/</span>（题目目录即项目，可附 question.json 写说明与提示词），刷新页面即可选择
+        </div>
+      </div>
       <div className="space-y-2">
         <AnimatePresence initial={false}>
           {combos.map((c, i) => (
@@ -138,18 +225,23 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
         <motion.button
           whileTap={{ scale: 0.95 }}
           className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white"
-          onClick={() => setCombos([...combos, { id: nextId.current++, harness: "opencode", model: "ark/glm-5.2" }])}
+          onClick={() => setCombos([...combos, { id: nextId.current++, harness: "opencode", model: "agentplan/glm-5.3-flash" }])}
         >
           + 添加组合
         </motion.button>
       </div>
       <div className="text-sm text-white/50">
-        预估成本：<span className="font-mono text-white/80">${est.low} – ${est.high}</span>
-        （{combos.length} 个组合并行，单运行超时 15 分钟）
+        预估成本：<span className="font-mono text-white/80">${est.low}{est.low === est.high ? "" : ` – $${est.high}`}</span>
+        （{combos.length} 个组合并行，单运行超时 15 分钟{allPrecise ? "，按同组合历史实测 token 均值精算" : "，按模型档位粗估"}）
       </div>
       {missingModel && (
         <div className="text-xs text-amber-300/90">
           有组合尚未选择模型：请在该 harness 完成本地登录/配置后，从模型下拉选择（或点「重新探测」）
+        </div>
+      )}
+      {error && (
+        <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-300">
+          {error}
         </div>
       )}
       <motion.button

@@ -1,0 +1,4 @@
+{
+  "name": "JavaScript 修 bug",
+  "description": "小而独立的 JS 模块，各藏一个用测试即可暴露的 bug，修复后 npm test 应全绿（node --test，无需安装依赖）。"
+}

@@ -2,8 +2,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
+import GlassSelect from "@/components/GlassSelect";
 
 type MatchRow = { id: string; prompt: string; combos: string; status: string; createdAt: string };
+
+// 分页大小：历史页按页拉取，"加载更多"追加下一页
+const PAGE_SIZE = 50;
 
 const STATUS_STYLE: Record<string, string> = {
   pending: "bg-white/10 text-white/60",
@@ -19,10 +23,35 @@ export default function HistoryPage() {
   const [status, setStatus] = useState("all");
   const [harness, setHarness] = useState("all");
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // offset=0 首屏加载 / 追加下一页
+  const load = async (offset: number) => {
+    const res = await fetch(`/api/matches?limit=${PAGE_SIZE}&offset=${offset}`);
+    const d = await res.json();
+    setMatches((prev) => (offset === 0 ? d.matches ?? [] : [...prev, ...(d.matches ?? [])]));
+    setHasMore(!!d.hasMore);
+  };
 
   useEffect(() => {
-    fetch("/api/matches").then((r) => r.json()).then((d) => setMatches(d.matches ?? []));
+    fetch(`/api/matches?limit=${PAGE_SIZE}&offset=0`)
+      .then((r) => r.json())
+      .then((d) => {
+        setMatches(d.matches ?? []);
+        setHasMore(!!d.hasMore);
+      })
+      .catch(() => {});
   }, []);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      await load(matches.length);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const remove = async (mid: string) => {
     if (!confirm("删除该对局？轨迹文件将一并清除。")) return;
@@ -43,8 +72,6 @@ export default function HistoryPage() {
     (q === "" || m.prompt.toLowerCase().includes(q.toLowerCase()) || m.id.includes(q))
   ), [matches, q, status, harness]);
 
-  const sel = "glass-input cursor-pointer rounded-full px-3 py-1.5 text-xs text-white/85 outline-none";
-
   return (
     <main className="mx-auto w-full max-w-4xl space-y-4 p-8">
       <motion.h1
@@ -59,7 +86,7 @@ export default function HistoryPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.06, duration: 0.35, ease: "easeOut" }}
-        className="glass flex flex-wrap items-center gap-2 rounded-full p-2"
+        className="glass relative z-10 flex flex-wrap items-center gap-2 rounded-full p-2"
       >
         <input
           className="glass-input min-w-40 flex-1 rounded-full px-3 py-1.5 text-xs text-white/85 outline-none placeholder-white/30"
@@ -67,14 +94,24 @@ export default function HistoryPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <select className={sel} value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="all">全部状态</option>
-          {["pending", "running", "completed", "partial"].map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select className={sel} value={harness} onChange={(e) => setHarness(e.target.value)}>
-          <option value="all">全部 harness</option>
-          {harnessOptions.map((h) => <option key={h} value={h}>{h}</option>)}
-        </select>
+        <GlassSelect
+          compact
+          value={status}
+          onChange={setStatus}
+          items={[
+            { value: "all", label: "全部状态" },
+            ...["pending", "running", "completed", "partial"].map((s) => ({ value: s, label: s })),
+          ]}
+        />
+        <GlassSelect
+          compact
+          value={harness}
+          onChange={setHarness}
+          items={[
+            { value: "all", label: "全部 harness" },
+            ...harnessOptions.map((h) => ({ value: h, label: h })),
+          ]}
+        />
         <span className="px-2 text-xs whitespace-nowrap text-white/40">{filtered.length} / {matches.length}</span>
       </motion.div>
       {filtered.length === 0 && (
@@ -131,6 +168,15 @@ export default function HistoryPage() {
           ))}
         </AnimatePresence>
       </div>
+      {hasMore && (
+        <button
+          className="glass mx-auto block cursor-pointer rounded-full px-6 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40"
+          disabled={loadingMore}
+          onClick={loadMore}
+        >
+          {loadingMore ? "加载中…" : "加载更多"}
+        </button>
+      )}
     </main>
   );
 }

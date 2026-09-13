@@ -7,7 +7,6 @@ export const matches = sqliteTable("matches", {
   combos: text("combos").notNull(), // JSON: {harness, model}[]
   sourceDir: text("source_dir"), // 题目项目源目录（可选）：开跑时复制进每个运行的工作目录
   status: text("status").notNull().default("pending"), // pending|running|completed|partial
-  parentMatchId: text("parent_match_id"), // 重跑血缘：本对局由哪个对局重跑而来
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -31,3 +30,9 @@ export const runs = sqliteTable("runs", {
 
 export type MatchRow = typeof matches.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
+
+/** 浏览器可见的运行 DTO：剥离 workdir 绝对路径（本地文件系统布局不外泄，UI 与 DB schema 解耦） */
+export type RunDTO = Omit<RunRow, "workdir">;
+export function toRunDTO(run: RunRow): RunDTO {
+  return { ...run }; // spread 不触发多余属性检查，workdir 被返回类型自然排除
+}

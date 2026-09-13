@@ -5,6 +5,7 @@ import { customAlphabet } from "nanoid";
 import { mkdirSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { matches, runs, type MatchRow, type RunRow } from "./schema";
+import type { Combo } from "@/lib/arena/types";
 
 function createDb(url: string) {
   if (url !== ":memory:") {
@@ -21,9 +22,6 @@ function createDb(url: string) {
   `);
   // 轻量迁移：旧库补列
   const cols = sqlite.pragma("table_info(matches)") as { name: string }[];
-  if (!cols.some((c) => c.name === "parent_match_id")) {
-    sqlite.exec("ALTER TABLE matches ADD COLUMN parent_match_id TEXT");
-  }
   if (!cols.some((c) => c.name === "source_dir")) {
     sqlite.exec("ALTER TABLE matches ADD COLUMN source_dir TEXT");
   }
@@ -39,9 +37,9 @@ export const db = createDb(url);
 
 const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
-export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string; parentMatchId?: string; sourceDir?: string | null }) {
+export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string; sourceDir?: string | null }) {
   const id = nanoid();
-  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending", parentMatchId: input.parentMatchId ?? null, sourceDir: input.sourceDir ?? null }).run();
+  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending", sourceDir: input.sourceDir ?? null }).run();
   return getMatch(id)!;
 }
 
@@ -49,12 +47,32 @@ export function getMatch(id: string) {
   return db.select().from(matches).where(eq(matches.id, id)).get();
 }
 
-export function listMatches() {
-  return db.select().from(matches).orderBy(desc(matches.createdAt)).limit(200).all();
+// 对局的组合配置：combos 以 JSON 字符串持久化，解析统一在此收口（runner/路由不再各自 JSON.parse）
+export function getMatchCombos(id: string): Combo[] {
+  const m = getMatch(id);
+  return m ? JSON.parse(m.combos) : [];
+}
+
+export function listMatches(limit = 200, offset = 0) {
+  return db.select().from(matches).orderBy(desc(matches.createdAt)).limit(limit).offset(offset).all();
+}
+
+export function countMatches() {
+  return db.select({ n: sql<number>`COUNT(*)` }).from(matches).get()!.n;
 }
 
 export function createRun(input: { id: string; matchId: string; harness: string; model: string; workdir: string }) {
   db.insert(runs).values({ ...input, status: "pending" }).run();
+}
+
+export function getRun(id: string) {
+  return db.select().from(runs).where(eq(runs.id, id)).get();
+}
+
+// 查询属于指定对局的运行：不存在或不属于该对局一律返回 null（续聊/停止/预览清理/轨迹/文件路由共用）
+export function getRunOfMatch(matchId: string, runId: string) {
+  const run = getRun(runId);
+  return run && run.matchId === matchId ? run : null;
 }
 
 export function updateRun(id: string, patch: Partial<RunRow>) {
@@ -84,17 +102,44 @@ export function getComboStats() {
   return rows.sort((a, b) => b.total - a.total);
 }
 
-// 血缘链：沿 parentMatchId 向上回溯，最老在前，含自身
-export function getLineage(id: string) {
-  const chain: MatchRow[] = [];
-  let cur = getMatch(id);
-  const guard = new Set<string>();
-  while (cur && !guard.has(cur.id)) {
-    guard.add(cur.id);
-    chain.unshift(cur);
-    cur = cur.parentMatchId ? getMatch(cur.parentMatchId) : undefined;
+// 跨对局统计：按 harness 汇总（统计页对比条形图，成本为累计花费）
+export function getHarnessStats() {
+  return db.select({
+    harness: runs.harness,
+    total: sql<number>`COUNT(*)`,
+    completed: sql<number>`SUM(CASE WHEN ${runs.status} = 'completed' THEN 1 ELSE 0 END)`,
+    avgDurationMs: sql<number | null>`AVG(${runs.durationMs})`,
+    totalCostUsd: sql<number | null>`SUM(${runs.costUsd})`,
+  }).from(runs).where(sql`${runs.status} != 'pending'`).groupBy(runs.harness).all()
+    .sort((a, b) => b.total - a.total);
+}
+
+// 近 N 天趋势：按天聚合运行数、完成数与累计成本（startedAt 为空即未启动，不计入）
+export function getDailyTrend(days = 14) {
+  const dayMs = 86400000;
+  const dayKey = (ts: number) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const now = Date.now();
+  const buckets = new Map<string, { total: number; completed: number; costUsd: number }>();
+  for (let i = days - 1; i >= 0; i--) buckets.set(dayKey(now - i * dayMs), { total: 0, completed: 0, costUsd: 0 });
+  const cutoff = now - (days - 1) * dayMs;
+  const rows = db.select({
+    startedAt: runs.startedAt,
+    status: runs.status,
+    costUsd: runs.costUsd,
+  }).from(runs).where(sql`${runs.startedAt} IS NOT NULL AND ${runs.startedAt} >= ${cutoff - dayMs}`).all();
+  for (const r of rows) {
+    if (r.startedAt == null) continue;
+    const key = dayKey(r.startedAt.getTime());
+    const b = buckets.get(key);
+    if (!b) continue;
+    b.total++;
+    if (r.status === "completed") b.completed++;
+    if (r.costUsd != null) b.costUsd += r.costUsd;
   }
-  return chain;
+  return [...buckets.entries()].map(([date, b]) => ({ date, ...b }));
 }
 
 // 删除对局：清 runs/matches 行 + 磁盘 workdir 目录；running 中禁止删
@@ -108,8 +153,13 @@ export function deleteMatch(id: string): { ok: boolean; error?: string } {
   db.delete(runs).where(eq(runs.matchId, id)).run();
   db.delete(matches).where(eq(matches.id, id)).run();
   if (runRows.length > 0) {
+    // 磁盘布局约定 <root>/<matchId>/<runId>：仅当所有 run 同根且目录名确为该对局 id 时才删，
+    // 防止 ARENA_WORKDIR_ROOT 被改过或布局变化后误删无关目录（不满足条件时保守跳过磁盘清理）
     const matchDir = path.dirname(runRows[0].workdir); // <root>/<matchId>
-    rmSync(matchDir, { recursive: true, force: true });
+    const consistent = runRows.every((r) => path.dirname(r.workdir) === matchDir);
+    if (consistent && path.basename(matchDir) === id) {
+      rmSync(matchDir, { recursive: true, force: true });
+    }
   }
   return { ok: true };
 }

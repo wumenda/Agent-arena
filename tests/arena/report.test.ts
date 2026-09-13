@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildMatchReport } from "@/lib/arena/report";
+import { buildMatchReport, buildMatchReportHtml } from "@/lib/arena/report";
 import type { MatchRow, RunRow } from "@/lib/db/schema";
 
 const match: MatchRow = {
   id: "m1", prompt: "写一个贪吃蛇", combos: "[]", status: "completed",
-  parentMatchId: null, sourceDir: null,
+  sourceDir: null,
   createdAt: new Date("2026-09-12T00:00:00Z"),
 };
 const run: RunRow = {
@@ -29,5 +29,27 @@ describe("buildMatchReport", () => {
     expect(md).toContain("$0.0500");
     expect(md).toContain("snake.html");
     expect(md).toContain("完成");
+  });
+
+  it("truncates final answer by default and keeps it with full=true", () => {
+    const longEvents = [
+      { kind: "message", text: "x".repeat(3000) + "END_MARK", ts: 1 },
+    ] as never;
+    const truncated = buildMatchReport(match, [run], { r1: longEvents });
+    expect(truncated).not.toContain("END_MARK"); // 默认截 2000 字
+    const full = buildMatchReport(match, [run], { r1: longEvents }, { full: true });
+    expect(full).toContain("END_MARK"); // full 时不截断
+  });
+
+  it("renders self-contained HTML with escaped prompt and metrics", () => {
+    const xssMatch = { ...match, prompt: "<script>alert(1)</script>" };
+    const html = buildMatchReportHtml(xssMatch, [run], { r1: events });
+    expect(html).toContain("<!doctype html>");
+    expect(html).toContain("对局报告 m1");
+    expect(html).toContain("claude-code×glm-5.3-flash");
+    expect(html).toContain("$0.0500");
+    expect(html).toContain("snake.html");
+    expect(html).not.toContain("<script>alert(1)</script>"); // prompt 已转义
+    expect(html).toContain("&lt;script&gt;");
   });
 });

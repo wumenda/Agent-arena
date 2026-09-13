@@ -1,0 +1,5 @@
+{
+  "title": "词频统计出错",
+  "description": "countWords 把 \"Hello  world hello\" 统计错了：大小写没归一、连续空格还产生空词条。",
+  "prompt": "修复 src/countWords.js 的词频统计：不区分大小写统计英文单词出现次数，任意连续空白和标点都视为分隔符，返回 { 单词(小写): 次数 }。不要修改测试文件，修完运行 npm test，全部用例需通过。"
+}

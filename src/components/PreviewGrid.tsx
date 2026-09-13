@@ -1,7 +1,27 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import type { RunRow } from "@/lib/db/schema";
+import type { RunDTO } from "@/lib/db/schema";
+import GlassSelect from "./GlassSelect";
+
+// 注入沙箱内的滚动条样式：srcdoc 沙箱为不透明源，外部 CSS 无法穿透，只能在内容里补一段；
+// 插到 <head> 开头，页面自带样式在后面声明可正常覆盖
+const SCROLLBAR_STYLE = `<style data-arena-injected>
+  html { scrollbar-width: thin; scrollbar-color: rgba(140,140,140,.55) transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(140,140,140,.45); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(140,140,140,.75); }
+  ::-webkit-scrollbar-corner { background: transparent; }
+</style>`;
+
+function injectScrollbarStyle(html: string): string {
+  const headOpen = /<head[^>]*>/i;
+  if (headOpen.test(html)) return html.replace(headOpen, (m) => m + SCROLLBAR_STYLE);
+  const htmlOpen = /<html[^>]*>/i;
+  if (htmlOpen.test(html)) return html.replace(htmlOpen, (m) => `${m}<head>${SCROLLBAR_STYLE}</head>`);
+  return SCROLLBAR_STYLE + html;
+}
 
 // 沙箱渲染帧：按 file 加载内容；dark 切换画布底色（file 变化经组件 key 重挂载）；宽度撑满网格单元
 function HtmlFrame({ matchId, runId, file, reloadKey, dark, title }: {
@@ -34,25 +54,44 @@ function HtmlFrame({ matchId, runId, file, reloadKey, dark, title }: {
     );
   }
   return (
-    <div className={`w-full overflow-hidden rounded-2xl border border-white/10 ${dark ? "bg-zinc-900" : "bg-white"}`}>
+    // 底色贴合全局液态玻璃：深色用 glass-strong 同源色调（微透出极光），浅色用浅色主题底色 #e9edf5
+    <div className={`w-full overflow-hidden rounded-2xl border border-white/10 ${dark ? "bg-[#16161c]/55" : "bg-[#e9edf5]"}`}>
       <iframe
         title={title}
         sandbox="allow-scripts allow-modals allow-pointer-lock"
-        srcDoc={content}
+        srcDoc={injectScrollbarStyle(content)}
         className="h-[480px] w-full border-0 bg-transparent"
       />
     </div>
   );
 }
 
-// 单个 Run 的浏览器卡片：拉取产出文件列表，选 HTML 入口，沙箱 iframe 渲染；宽度由全局统一控制
-function PreviewCard({ matchId, run, tick, viewW }: { matchId: string; run: RunRow; tick: number; viewW: number }) {
+// 单个 Run 的浏览器卡片：嗅探到服务 URL 时直连 iframe 实时预览（agent 起的本地服务，本机可信，
+// 不加 sandbox 以保留 HMR websocket / 同源请求）；否则回退到产出 HTML 文件的沙箱渲染。
+// 文件列表与预览地址随 run 变化 / live tick / 状态收敛重拉；请求失败自动重试（上限 3 次）
+function PreviewCard({ matchId, run, tick }: { matchId: string; run: RunDTO; tick: number }) {
   const [htmlFiles, setHtmlFiles] = useState<string[]>([]);
   const [file, setFile] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [dark, setDark] = useState(false);
   const [retryK, setRetryK] = useState(0);
+  const [cleaning, setCleaning] = useState(false);
   const retries = useRef(0);
+
+  // 清理服务：结束该 run 预览端口上的监听进程并清除预览地址，卡片即时回退到文件预览
+  const cleanupService = () => {
+    if (cleaning) return;
+    setCleaning(true);
+    fetch(`/api/matches/${matchId}/preview/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId: run.id }),
+    })
+      .then(() => setPreviewUrl(null))
+      .catch(() => {})
+      .finally(() => setCleaning(false));
+  };
 
   // 文件列表：run 变化 / live tick / 状态收敛（→completed 补拉最后一刻写入的文件）时重拉；
   // 请求失败自动重试（上限 3 次），避免完成瞬间一次失败导致卡片永久空白
@@ -66,6 +105,7 @@ function PreviewCard({ matchId, run, tick, viewW }: { matchId: string; run: RunR
       .then((d) => {
         if (cancelled) return;
         retries.current = 0;
+        setPreviewUrl(d.previewUrl ?? null);
         const htmls: string[] = (d.files ?? [])
           .map((f: { path: string }) => f.path)
           .filter((p: string) => /\.html?$/i.test(p));
@@ -87,7 +127,6 @@ function PreviewCard({ matchId, run, tick, viewW }: { matchId: string; run: RunR
     return () => { cancelled = true; };
   }, [matchId, run.id, run.status, tick, retryK]);
 
-  const sel = "glass-input max-w-44 cursor-pointer truncate rounded-full px-3 py-1 text-xs text-white/85 outline-none";
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -100,10 +139,27 @@ function PreviewCard({ matchId, run, tick, viewW }: { matchId: string; run: RunR
           <span className="truncate text-sm font-semibold text-white/90">{run.harness} · {run.model}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {htmlFiles.length > 1 ? (
-            <select className={sel} value={file} onChange={(e) => setFile(e.target.value)} title={file}>
-              {htmlFiles.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
+          {previewUrl ? (
+            <>
+              <span className="max-w-40 cursor-help truncate font-mono text-xs text-sky-300" title={previewUrl}>{previewUrl}</span>
+              <button
+                className="cursor-pointer rounded-full bg-red-500/10 px-2.5 py-1 text-xs text-red-300 transition-colors duration-200 hover:bg-red-500/20 disabled:cursor-default disabled:opacity-50"
+                title="结束该 run 的本地服务并清除预览地址"
+                disabled={cleaning}
+                onClick={cleanupService}
+              >
+                {cleaning ? "清理中…" : "清理服务"}
+              </button>
+            </>
+          ) : htmlFiles.length > 1 ? (
+            <GlassSelect
+              compact
+              align="right"
+              className="max-w-44"
+              value={file}
+              onChange={setFile}
+              items={htmlFiles.map((f) => ({ value: f, label: f }))}
+            />
           ) : (
             <span className="max-w-44 truncate font-mono text-xs text-white/40" title={file}>{file}</span>
           )}
@@ -116,20 +172,34 @@ function PreviewCard({ matchId, run, tick, viewW }: { matchId: string; run: RunR
           </button>
         </div>
       </div>
-      <div className="flex items-center justify-end gap-2 text-[10px] text-white/40">
-        <button className="cursor-pointer rounded-full bg-white/5 px-2 py-0.5 hover:bg-white/10" onClick={() => setDark((d) => !d)}>
-          {dark ? "浅色底" : "深色底"}
-        </button>
-      </div>
-      <HtmlFrame
-        key={file}
-        matchId={matchId}
-        runId={run.id}
-        file={file}
-        reloadKey={reloadKey}
-        dark={dark}
-        title={`${run.harness} · ${run.model}`}
-      />
+      {!previewUrl && (
+        <div className="flex items-center justify-end gap-2 text-[10px] text-white/40">
+          <button className="cursor-pointer rounded-full bg-white/5 px-2 py-0.5 hover:bg-white/10" onClick={() => setDark((d) => !d)}>
+            {dark ? "浅色底" : "深色底"}
+          </button>
+        </div>
+      )}
+      {previewUrl ? (
+        // 服务直连模式：reloadKey 变化强制重挂载 iframe 重新加载；地址变更也会重挂载
+        <div className="w-full overflow-hidden rounded-2xl border border-white/10 bg-white">
+          <iframe
+            key={`${previewUrl}#${reloadKey}`}
+            title={`${run.harness} · ${run.model}`}
+            src={previewUrl}
+            className="h-[480px] w-full border-0 bg-transparent"
+          />
+        </div>
+      ) : (
+        <HtmlFrame
+          key={file}
+          matchId={matchId}
+          runId={run.id}
+          file={file}
+          reloadKey={reloadKey}
+          dark={dark}
+          title={`${run.harness} · ${run.model}`}
+        />
+      )}
     </motion.div>
   );
 }
@@ -138,7 +208,7 @@ function PreviewCard({ matchId, run, tick, viewW }: { matchId: string; run: RunR
 // 宽度档位决定每行列数：375→4 张、768→2 张、1280→1 张；live 时轮询新产出 HTML
 const WIDTH_COLS: Record<number, number> = { 375: 4, 768: 2, 1280: 1 };
 
-export default function PreviewGrid({ matchId, runs, live }: { matchId: string; runs: RunRow[]; live: boolean }) {
+export default function PreviewGrid({ matchId, runs, live }: { matchId: string; runs: RunDTO[]; live: boolean }) {
   const [tick, setTick] = useState(0);
   const [viewW, setViewW] = useState(768);
   useEffect(() => {
@@ -152,7 +222,7 @@ export default function PreviewGrid({ matchId, runs, live }: { matchId: string; 
   return (
     <section className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-medium tracking-wide text-white/40 uppercase">页面预览（沙箱渲染，点击画面获得键盘焦点）</div>
+        <div className="text-xs font-medium tracking-wide text-white/40 uppercase">页面预览（文件沙箱渲染 / 服务 URL 直连）</div>
         <div className="flex items-center gap-1.5 text-xs text-white/40">
           <span>每行卡片</span>
           {Object.keys(WIDTH_COLS).map(Number).map((w) => (
@@ -169,7 +239,7 @@ export default function PreviewGrid({ matchId, runs, live }: { matchId: string; 
       </div>
       <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {runs.map((r) => (
-          <PreviewCard key={r.id} matchId={matchId} run={r} tick={tick} viewW={viewW} />
+          <PreviewCard key={r.id} matchId={matchId} run={r} tick={tick} />
         ))}
       </div>
     </section>

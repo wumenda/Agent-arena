@@ -1,5 +1,10 @@
-import { existsSync } from "node:fs";
+import { mkdirSync, readFileSync, existsSync } from "node:fs";
+import path from "node:path";
 import puppeteer from "puppeteer-core";
+import pixelmatch from "pixelmatch";
+import { PNG } from "pngjs";
+import { safeResolveFile } from "./files";
+import type { ScreenshotBody } from "./types";
 
 const CHROME_CANDIDATES = [
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -37,4 +42,53 @@ export async function renderShot(html: string, outFile: string): Promise<ShotRes
   } finally {
     await browser.close();
   }
+}
+
+const SHOT_DIR = path.join(".arena", "shots");
+
+export type ShotDiffResult = {
+  left: string;
+  right: string;
+  diff: string;
+  diffCount: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * 视觉对比：对两个运行的产物 HTML 各截一图并做 pixelmatch 像素对比，返回三张 base64。
+ * resolveWorkdir 由调用方注入（runId → workdir，run 不存在返回 null），本模块不依赖 db。
+ * 文件路径经 safeResolveFile 防穿越；返回 null 表示 run 或文件不存在；"no-chrome" 表示本机无可用浏览器。
+ */
+export async function diffShots(
+  matchId: string,
+  left: ScreenshotBody["left"],
+  right: ScreenshotBody["right"],
+  resolveWorkdir: (runId: string) => string | null,
+): Promise<ShotDiffResult | "no-chrome" | null> {
+  if (!findChrome()) return "no-chrome";
+  const resolveHtml = (side: ScreenshotBody["left"]) => {
+    const workdir = resolveWorkdir(side.runId);
+    if (!workdir) return null;
+    const file = safeResolveFile(workdir, side.path);
+    if (!file) return null;
+    const raw = readFileSync(file, "utf8");
+    return { html: raw, key: hashKey(matchId, side.runId, side.path, String(raw.length)) };
+  };
+  mkdirSync(SHOT_DIR, { recursive: true });
+  const shoot = async (side: ScreenshotBody["left"]) => {
+    const r = resolveHtml(side);
+    if (!r) return null;
+    const outFile = path.join(SHOT_DIR, `${matchId}-${r.key}.png`);
+    if (!existsSync(outFile)) await renderShot(r.html, outFile);
+    return PNG.sync.read(readFileSync(outFile));
+  };
+  const a = await shoot(left);
+  const b = await shoot(right);
+  if (!a || !b) return null;
+  const { width, height } = a;
+  const diff = new PNG({ width, height });
+  const diffCount = pixelmatch(a.data, b.data, diff.data, width, height, { threshold: 0.1 });
+  const toB64 = (png: PNG) => PNG.sync.write(png).toString("base64");
+  return { left: toB64(a), right: toB64(b), diff: toB64(diff), diffCount, width, height };
 }
