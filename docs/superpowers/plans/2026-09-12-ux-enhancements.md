@@ -1,4 +1,4 @@
-# 模型-Agent 竞技场 · UX 增强实施计划（ux-enhancements）
+# Agent 竞技场 · UX 增强实施计划（ux-enhancements）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

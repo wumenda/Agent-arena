@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "模型-Agent 竞技场",
+  title: "Agent 竞技场",
   description: "一句话发起多 harness 编程对局，实时对比轨迹与产出",
 };
 
@@ -34,7 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               className="mr-2 flex items-center gap-2 font-semibold tracking-tight text-white/90"
             >
               <span className="inline-block size-2 rounded-full bg-gradient-to-br from-sky-400 to-violet-500 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
-              模型-Agent 竞技场
+              Agent 竞技场
             </Link>
             <Link
               href="/"

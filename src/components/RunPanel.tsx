@@ -14,13 +14,18 @@ const STATUS_STYLE: Record<string, string> = {
   timeout: "bg-amber-400/15 text-amber-300",
 };
 
-export default function RunPanel({ run, events, matchId, onRerunOne }: { run: RunRow; events: ArenaEvent[]; matchId: string; onRerunOne?: (combo: { harness: string; model: string }) => void }) {
+export default function RunPanel({ run, events, matchId, onRerunOne, onStopOne, id }: {
+  run: RunRow; events: ArenaEvent[]; matchId: string; id?: string;
+  onRerunOne?: (combo: { harness: string; model: string }) => void;
+  onStopOne?: (runId: string) => void;
+}) {
   return (
     <motion.div
+      id={id}
       layout
       initial={{ opacity: 0, y: 20, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      className="glass-strong w-80 shrink-0 space-y-3 rounded-3xl p-4"
+      className="glass-strong flex h-[44rem] w-[28rem] shrink-0 flex-col gap-3 overflow-hidden rounded-3xl p-4"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="truncate text-sm font-semibold text-white/90">{run.harness} · {run.model}</div>
@@ -50,7 +55,18 @@ export default function RunPanel({ run, events, matchId, onRerunOne }: { run: Ru
         )}
       </AnimatePresence>
       <MetricsBar durationMs={run.durationMs} tokensIn={run.tokensIn} tokensOut={run.tokensOut} costUsd={run.costUsd}
-        startedAt={run.startedAt} running={run.status === "running"} />
+        startedAt={run.startedAt} running={run.status === "running"} verifyStatus={run.verifyStatus} />
+      {onStopOne && run.status === "running" && (
+        <div className="flex justify-end">
+          <button
+            className="flex cursor-pointer items-center gap-1 rounded-full bg-red-400/10 px-2.5 py-1 text-[10px] text-red-300 transition-colors duration-200 hover:bg-red-400/20"
+            title="终止该 agent 进程，按 failed 落库"
+            onClick={() => onStopOne(run.id)}
+          >
+            ■ 停止
+          </button>
+        </div>
+      )}
       {onRerunOne && ["failed", "timeout", "completed"].includes(run.status) && (
         <div className="flex justify-end">
           <button

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import RunPanel from "@/components/RunPanel";
 import RunDiff from "@/components/RunDiff";
@@ -20,19 +20,25 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function MatchPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [events, setEvents] = useState<Record<string, ArenaEvent[]>>({});
   const [matchStatus, setMatchStatus] = useState("…");
   const [showDiff, setShowDiff] = useState(false);
+  // 卡片 tab 当前聚焦项：点击 tab 高亮并滚动到对应卡片
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  // 重跑后原地刷新：重挂数据流（重新拉 runs + 重连 SSE），不再跳转新对局页
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     const doneRef = { current: false };
+    // 已知 run 集合：重跑追加的新 run 首次经 SSE 出现时补拉全量，新卡片即时上屏
+    const knownIds = new Set<string>();
     const load = async () => {
       const res = await fetch(`/api/matches/${id}`);
       if (res.ok) {
         const { match, runs } = await res.json();
         setRuns(runs);
+        runs.forEach((r: RunRow) => knownIds.add(r.id));
         setMatchStatus(match.status);
         if (["completed", "partial"].includes(match.status)) doneRef.current = true;
         // 兜底回放：拉历史轨迹（刷新/断流后仍有数据）
@@ -53,15 +59,21 @@ export default function MatchPage() {
       if (e.channel === "run-event") {
         setEvents((prev) => ({ ...prev, [e.runId]: [...(prev[e.runId] ?? []), e.event] }));
       } else if (e.channel === "run-status") {
+        // 重跑追加的新 run：SSE 先于轮询到达时列表里还没有它，补拉一次让新卡片上屏
+        if (!knownIds.has(e.runId)) {
+          knownIds.add(e.runId);
+          load();
+        }
         setRuns((prev) => prev.map((r) => (r.id === e.runId ? { ...r, status: e.status, error: e.error ?? r.error } : r)));
       } else if (e.channel === "match-status") {
         setMatchStatus(e.status);
-        if (["completed", "partial"].includes(e.status)) doneRef.current = true;
+        if (e.status === "running") doneRef.current = false; // 重跑/首轮启动：恢复轮询直到终态
+        else if (["completed", "partial"].includes(e.status)) doneRef.current = true;
       }
     };
     return () => { clearInterval(poll); es.close(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, reloadTick]);
 
   const rerun = async (combos?: { harness: string; model: string }[]) => {
     const res = await fetch(`/api/matches/${id}/rerun`, {
@@ -69,8 +81,16 @@ export default function MatchPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(combos ? { combos } : {}),
     });
-    const d = await res.json();
-    if (res.ok) router.push(`/match/${d.match.id}`);
+    if (res.ok) setReloadTick((t) => t + 1); // 同对局追加 runs，原地刷新数据流
+  };
+
+  // 手动停止单个 agent：杀进程树，run-status 事件会把 failed + 原因推回
+  const stopOne = async (runId: string) => {
+    await fetch(`/api/matches/${id}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId }),
+    });
   };
 
   // 终态桌面通知：对局结束且已授权时弹出系统通知
@@ -104,7 +124,7 @@ export default function MatchPage() {
         <div className="flex shrink-0 items-center gap-2">
           {typeof Notification !== "undefined" && Notification.permission === "default" && (
             <button
-              className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+              className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white"
               title="对局结束时弹出系统通知"
               onClick={() => Notification.requestPermission()}
             >
@@ -112,13 +132,13 @@ export default function MatchPage() {
             </button>
           )}
           <a
-            className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+            className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white"
             href={`/api/matches/${id}/report`}
           >
             导出报告
           </a>
           <button
-            className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
             disabled={runs.length < 2}
             onClick={() => setShowDiff(true)}
           >
@@ -126,7 +146,9 @@ export default function MatchPage() {
           </button>
           <motion.button
             whileTap={{ scale: 0.95 }}
-            className="glass shrink-0 cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+            className="glass shrink-0 cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={matchStatus === "running"}
+            title="在本对局追加一轮全部组合，旧卡片保留，新旧同屏对比"
             onClick={() => rerun()}
           >
             一键重跑（看方差）
@@ -136,9 +158,29 @@ export default function MatchPage() {
       {["completed", "partial"].includes(matchStatus) && runs.length > 0 && <ComparisonTable runs={runs} />}
       <LineageChart matchId={id} />
       <PreviewGrid matchId={id} runs={runs} live={matchStatus === "running"} />
-      <div className="flex gap-4 overflow-x-auto pb-2">
+      {/* 卡片 tab 导航：点击平滑滚动到对应卡片，无需拖滚动条 */}
+      {runs.length > 0 && (
+        <div className="no-scrollbar flex items-center gap-2 overflow-x-auto">
+          {runs.map((r, i) => (
+            <button
+              key={r.id}
+              onClick={() => {
+                setActiveRunId(r.id);
+                document.getElementById(`run-card-${r.id}`)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+              }}
+              className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 font-mono text-xs transition-colors duration-200 ${
+                activeRunId === r.id ? "bg-white/15 text-white" : "glass text-white/50 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <span className={`size-1.5 shrink-0 rounded-full ${STATUS_STYLE[r.status]?.split(" ")[0] ?? "bg-white/30"}`} />
+              {i + 1}. {r.harness} · {r.model}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="no-scrollbar flex gap-4 overflow-x-auto">
         {runs.map((r) => (
-          <RunPanel key={r.id} run={r} events={events[r.id] ?? []} matchId={id} onRerunOne={(c) => rerun([c])} />
+          <RunPanel key={r.id} id={`run-card-${r.id}`} run={r} events={events[r.id] ?? []} matchId={id} onRerunOne={(c) => rerun([c])} onStopOne={stopOne} />
         ))}
         {runs.length === 0 && (
           <div className="glass rounded-3xl p-8 text-sm text-white/40">等待运行启动…</div>

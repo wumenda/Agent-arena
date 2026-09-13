@@ -52,4 +52,24 @@ describe("runner", () => {
     const { getMatch } = await import("@/lib/db/index");
     expect(getMatch(m.id)!.status).toBe("partial");
   }, 30000);
+
+  it("classifies stderr: debug logs stay system (UI 隐藏), real errors surface as error", async () => {
+    const m = createMatch({ prompt: "p", combos: [{ harness: "claude-code", model: "x" }] });
+    const noisy = path.join(os.tmpdir(), "arena-noisy.mjs");
+    fs.writeFileSync(noisy, [
+      `console.error("2026-09-13T02:00:11.881413Z INFO codex_exec: noise line");`,
+      `console.error("API Error: 401 unauthorized");`,
+      `console.log(JSON.stringify({type:"text",text:"hi"}));`,
+    ].join("\n"));
+    process.env.ARENA_FAKE_CMD = `node ${noisy}`;
+    const events: { kind: string; text?: string }[] = [];
+    const unsub = subscribe((e) => {
+      if (e.channel === "run-event") events.push({ kind: e.event.kind, text: (e.event as { text?: string }).text });
+    });
+    await runMatch(m.id);
+    unsub();
+    // 时间戳 INFO 行 → system（不展示）；真错误 → error（上屏）
+    expect(events.some((e) => e.kind === "system" && e.text?.includes("INFO"))).toBe(true);
+    expect(events.some((e) => e.kind === "error" && e.text?.includes("unauthorized"))).toBe(true);
+  }, 30000);
 });

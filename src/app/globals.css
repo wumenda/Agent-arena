@@ -21,6 +21,8 @@ body::before {
   inset: -10%;
   z-index: -1;
   pointer-events: none;
+  /* 提升为常驻缓存层：玻璃 backdrop-filter 的采样源稳定，重绘时不反复重读渐变（防闪烁） */
+  transform: translateZ(0);
   background:
     radial-gradient(38% 32% at 16% 10%, rgba(10, 132, 255, 0.30), transparent 70%),
     radial-gradient(34% 30% at 84% 6%, rgba(191, 90, 242, 0.24), transparent 70%),
@@ -28,11 +30,12 @@ body::before {
     radial-gradient(36% 34% at 10% 84%, rgba(255, 69, 58, 0.13), transparent 70%);
 }
 
-/* 液态玻璃：半透明基底 + 背景模糊饱和 + 顶部镜面高光 */
+/* 液态玻璃：半透明基底 + 背景模糊饱和 + 顶部镜面高光
+   注意：不要给本元素加 translateZ/will-change 提升独立层——Chromium 下 backdrop-filter 元素
+   被提升后每次重绘会在层底缘出现闪烁带（悬停卡片下部闪的根源） */
 @utility glass {
   background: rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -43,18 +46,41 @@ body::before {
 @utility glass-strong {
   background: rgba(22, 22, 28, 0.55);
   backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
     0 12px 40px rgba(0, 0, 0, 0.42);
 }
 
+/* ⚠️ 玻璃元素（glass/glass-strong）自身与内部严禁任何动画（背景过渡/::after 透明度等）：
+   Chromium 中 backdrop-filter 元素的子孙内容变化会打掉滤波缓存，逐帧重新执行 blur，
+   分块重算时出现底部块带明暗交替（卡片下部闪烁的根源）。
+   悬停提亮请用「兄弟节点遮罩 + group-hover」（见历史对局卡片），兄弟层在玻璃之上合成，不触发重滤波 */
+
 /* 玻璃质感输入框 */
 @utility glass-input {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 隐藏滚动条但保留滚动能力：用于指标条、卡片横向列表 */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 弹层用浓玻璃：高不透明度保证选项可读性 */
+@utility glass-popover {
+  background: rgba(20, 20, 26, 0.94);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 16px 48px rgba(0, 0, 0, 0.55);
 }
 
 /* macOS 细滚动条 */

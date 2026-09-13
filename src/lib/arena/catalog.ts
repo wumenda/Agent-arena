@@ -5,4 +5,8 @@ export const HARNESS_CATALOG: { id: string; displayName: string; models: string[
   { id: "codex", displayName: "Codex CLI", models: ["glm-5.3-flash", "glm-5.2", "doubao-seed-2.1-turbo"] },
   // Task 0 实测：本机 opencode 可用模型
   { id: "opencode", displayName: "OpenCode", models: ["ark/glm-5.2", "opencode/deepseek-v4-flash-free", "opencode/ling-3.0-flash-free", "opencode/mimo-v2.5-free"] },
+  // 闭源 harness（本机 CLI，Task 0 实测）
+  { id: "trae", displayName: "Trae CLI", models: ["Doubao-Seed-Evolving"] },
+  { id: "codebuddy", displayName: "CodeBuddy", models: ["default-model", "glm-5.3", "glm-5.2", "kimi-k3", "gpt-5.6-sol"] },
+  { id: "qoder", displayName: "Qoder CLI", models: ["Qwen3.8-Max"] },
 ];

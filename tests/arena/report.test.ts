@@ -4,13 +4,13 @@ import type { MatchRow, RunRow } from "@/lib/db/schema";
 
 const match: MatchRow = {
   id: "m1", prompt: "写一个贪吃蛇", combos: "[]", status: "completed",
-  parentMatchId: null,
+  parentMatchId: null, sourceDir: null,
   createdAt: new Date("2026-09-12T00:00:00Z"),
 };
 const run: RunRow = {
   id: "r1", matchId: "m1", harness: "claude-code", model: "glm-5.3-flash",
   status: "completed", error: null, workdir: "/tmp/x", startedAt: null, finishedAt: null,
-  durationMs: 61000, tokensIn: 100, tokensOut: 20, costUsd: 0.05,
+  durationMs: 61000, tokensIn: 100, tokensOut: 20, costUsd: 0.05, verifyStatus: null,
 };
 const events = [
   { kind: "tool_call", tool: "Write", input: {}, ts: 1 },

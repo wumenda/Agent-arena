@@ -37,6 +37,14 @@ export default function ComparisonTable({ runs }: { runs: RunRow[] }) {
 
   const isBest = (v: number | null | undefined, b: number | null) => v != null && b != null && v === b;
 
+  // 修复验证列：仅当存在验证结果（题目带测试套件的对局）时显示
+  const showVerify = runs.some((r) => r.verifyStatus != null);
+  const VERIFY_BADGE: Record<string, { text: string; cls: string; title: string }> = {
+    passed: { text: "✓ 通过", cls: "text-emerald-300", title: "测试套件通过" },
+    failed: { text: "✗ 未通过", cls: "text-red-300", title: "测试套件未通过（详见 verify.log）" },
+    skipped: { text: "— 跳过", cls: "text-white/40", title: "题目无测试套件" },
+  };
+
   const th = (key: SortKey, label: string) => (
     <th
       className="cursor-pointer px-3 py-2 text-right font-medium whitespace-nowrap select-none hover:text-white"
@@ -57,6 +65,7 @@ export default function ComparisonTable({ runs }: { runs: RunRow[] }) {
             {th("tokensIn", "tokens in")}
             {th("tokensOut", "tokens out")}
             {th("cost", "成本")}
+            {showVerify && <th className="px-3 py-2 text-right font-medium">验证</th>}
           </tr>
         </thead>
         <tbody className="font-mono">
@@ -72,6 +81,13 @@ export default function ComparisonTable({ runs }: { runs: RunRow[] }) {
               <td className={`px-3 py-2 text-right whitespace-nowrap ${isBest(r.costUsd, best.cost) ? "text-emerald-300" : "text-white/60"}`}>
                 {r.costUsd != null ? `$${r.costUsd.toFixed(4)}` : "n/a"}
               </td>
+              {showVerify && (
+                <td className="px-3 py-2 text-right font-sans whitespace-nowrap" title={r.verifyStatus ? VERIFY_BADGE[r.verifyStatus]?.title : undefined}>
+                  {r.verifyStatus ? (
+                    <span className={VERIFY_BADGE[r.verifyStatus]?.cls ?? "text-white/40"}>{VERIFY_BADGE[r.verifyStatus]?.text ?? r.verifyStatus}</span>
+                  ) : "—"}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

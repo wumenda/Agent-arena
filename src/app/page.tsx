@@ -9,11 +9,16 @@ export default function Home() {
   const [parsing, setParsing] = useState(false);
   const [config, setConfig] = useState<MatchConfig | null>(null);
   const [parseError, setParseError] = useState("");
-  const [detect, setDetect] = useState<{ harness: string; installed: boolean; detail: string }[]>([]);
+  const [detect, setDetect] = useState<{ harness: string; installed: boolean; detail: string; models?: string[] }[]>([]);
   const [history, setHistory] = useState<string[]>([]);
 
+  // 探测 harness 安装状态与本地可用模型；force 绕过服务端 30s 缓存（「重新探测」按钮用）
+  const refreshDetect = (force = false) => {
+    fetch(`/api/detect${force ? "?force=1" : ""}`).then((r) => r.json()).then((d) => setDetect(d.results ?? []));
+  };
+
   useEffect(() => {
-    fetch("/api/detect").then((r) => r.json()).then((d) => setDetect(d.results ?? []));
+    refreshDetect();
   }, []);
 
   // prompt 历史：挂载加载一次 + ConfigForm 开跑后经事件刷新
@@ -27,6 +32,11 @@ export default function Home() {
     window.addEventListener("arena:prompt-history", load);
     return () => window.removeEventListener("arena:prompt-history", load);
   }, []);
+
+  // 探测到的各 harness 动态模型列表（detect 失败的 harness 由 ModelSelect 回退静态目录）
+  const modelsByHarness = Object.fromEntries(
+    detect.filter((d) => d.models?.length).map((d) => [d.harness, d.models!])
+  );
 
   const parse = async () => {
     setParsing(true);
@@ -51,7 +61,7 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-gradient-to-b from-white to-white/60 bg-clip-text text-4xl font-bold tracking-tight text-transparent"
         >
-          模型-Agent 竞技场
+          Agent 竞技场
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 14 }}
@@ -153,7 +163,7 @@ export default function Home() {
         transition={{ delay: 0.2 }}
         className="glass-strong rounded-3xl p-5"
       >
-        <ConfigForm initial={config} />
+        <ConfigForm initial={config} modelsByHarness={modelsByHarness} onRefreshModels={() => refreshDetect(true)} />
       </motion.section>
     </main>
   );

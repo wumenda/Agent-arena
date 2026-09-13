@@ -5,6 +5,7 @@ export const matches = sqliteTable("matches", {
   id: text("id").primaryKey(), // nanoid
   prompt: text("prompt").notNull(),
   combos: text("combos").notNull(), // JSON: {harness, model}[]
+  sourceDir: text("source_dir"), // 题目项目源目录（可选）：开跑时复制进每个运行的工作目录
   status: text("status").notNull().default("pending"), // pending|running|completed|partial
   parentMatchId: text("parent_match_id"), // 重跑血缘：本对局由哪个对局重跑而来
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
@@ -25,6 +26,7 @@ export const runs = sqliteTable("runs", {
   tokensIn: integer("tokens_in"),
   tokensOut: integer("tokens_out"),
   costUsd: real("cost_usd"),
+  verifyStatus: text("verify_status"), // 修复验证：passed|failed|skipped（题目带测试套件时才有值）
 });
 
 export type MatchRow = typeof matches.$inferSelect;

@@ -16,13 +16,20 @@ function createDb(url: string) {
   const db = drizzle(sqlite);
   // drizzle-kit push 负责建表；此处直接执行 DDL 保证首次可用
   sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS matches (id TEXT PRIMARY KEY, prompt TEXT NOT NULL, combos TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, match_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', error TEXT, workdir TEXT NOT NULL, started_at INTEGER, finished_at INTEGER, duration_ms INTEGER, tokens_in INTEGER, tokens_out INTEGER, cost_usd REAL);
+    CREATE TABLE IF NOT EXISTS matches (id TEXT PRIMARY KEY, prompt TEXT NOT NULL, combos TEXT NOT NULL, source_dir TEXT, status TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, match_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', error TEXT, workdir TEXT NOT NULL, started_at INTEGER, finished_at INTEGER, duration_ms INTEGER, tokens_in INTEGER, tokens_out INTEGER, cost_usd REAL, verify_status TEXT);
   `);
   // 轻量迁移：旧库补列
   const cols = sqlite.pragma("table_info(matches)") as { name: string }[];
   if (!cols.some((c) => c.name === "parent_match_id")) {
     sqlite.exec("ALTER TABLE matches ADD COLUMN parent_match_id TEXT");
+  }
+  if (!cols.some((c) => c.name === "source_dir")) {
+    sqlite.exec("ALTER TABLE matches ADD COLUMN source_dir TEXT");
+  }
+  const runCols = sqlite.pragma("table_info(runs)") as { name: string }[];
+  if (!runCols.some((c) => c.name === "verify_status")) {
+    sqlite.exec("ALTER TABLE runs ADD COLUMN verify_status TEXT");
   }
   return db;
 }
@@ -32,9 +39,9 @@ export const db = createDb(url);
 
 const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
-export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string; parentMatchId?: string }) {
+export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string; parentMatchId?: string; sourceDir?: string | null }) {
   const id = nanoid();
-  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending", parentMatchId: input.parentMatchId ?? null }).run();
+  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending", parentMatchId: input.parentMatchId ?? null, sourceDir: input.sourceDir ?? null }).run();
   return getMatch(id)!;
 }
 

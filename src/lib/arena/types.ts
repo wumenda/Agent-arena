@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const HARNESS_IDS = ["claude-code", "codex", "opencode"] as const;
+export const HARNESS_IDS = ["claude-code", "codex", "opencode", "trae", "codebuddy", "qoder"] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
 
 export const ComboSchema = z.object({
@@ -12,6 +12,8 @@ export type Combo = z.infer<typeof ComboSchema>;
 export const MatchConfigSchema = z.object({
   prompt: z.string().min(1).max(20000),
   combos: z.array(ComboSchema).min(1).max(24),
+  // 题目项目：可选。填本机一个含 bug 的项目目录，开跑时复制一份到每个运行的工作目录（隔离改同一道题）
+  sourceDir: z.string().min(1).max(500).optional(),
 });
 export type MatchConfig = z.infer<typeof MatchConfigSchema>;
 
@@ -37,4 +39,4 @@ export type ArenaEvent =
   | { kind: "done"; usage?: TokenUsage; costUsd?: number; ts: number };
 
 export type RunStatus = "pending" | "running" | "completed" | "failed" | "timeout";
-export type DetectResult = { harness: HarnessId; installed: boolean; detail: string };
+export type DetectResult = { harness: HarnessId; installed: boolean; detail: string; models?: string[] };

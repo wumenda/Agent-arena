@@ -16,7 +16,7 @@ export default function DiffView({ events, matchId, run }: { events: ArenaEvent[
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="space-y-2"
+      className="min-h-0 flex-1 space-y-2 overflow-y-auto"
     >
       {files.length > 0 && (
         <div className="text-xs">

@@ -1,114 +1,134 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import type { ArenaEvent } from "@/lib/arena/types";
 
-function eventSummary(e: ArenaEvent): string {
-  return e.kind === "message" ? e.text :
-    e.kind === "thinking" ? `思考：${e.text.slice(0, 200)}` :
-    e.kind === "tool_call" ? `调用工具 ${e.tool}` :
-    e.kind === "tool_result" ? `工具返回：${e.output.slice(0, 200)}` :
-    e.kind === "file_edit" ? `编辑文件 ${e.path}` :
-    e.kind === "command" ? `执行命令 ${e.command}（退出码 ${e.exitCode ?? "?"}）` :
-    e.kind === "system" ? `[系统] ${e.text.slice(0, 200)}` :
-    e.kind === "error" ? `错误：${e.text.slice(0, 200)}` : "完成";
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round"
+      className={`size-3 shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`} aria-hidden>
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
 }
 
-function eventFull(e: ArenaEvent): string {
-  switch (e.kind) {
-    case "message": return e.text;
-    case "thinking": return e.text;
-    case "tool_call": return `${e.tool}\n${JSON.stringify(e.input, null, 2)}`;
-    case "tool_result": return e.output;
-    case "file_edit": return e.path;
-    case "command": return `${e.command}${e.output ? `\n${e.output}` : ""}`;
-    case "system": return e.text;
-    case "error": return e.text;
-    case "done": return e.usage ? `tokens: ${e.usage.input} → ${e.usage.output}${e.costUsd != null ? `\ncost: $${e.costUsd}` : ""}` : "完成";
-  }
-}
-
-function eventColor(e: ArenaEvent): string {
-  return e.kind === "message" ? "text-white/85" :
-    e.kind === "thinking" ? "text-violet-300" :
-    e.kind === "tool_call" || e.kind === "file_edit" ? "text-sky-300" :
-    e.kind === "tool_result" || e.kind === "command" ? "text-white/45" :
-    e.kind === "error" ? "text-red-300" : "text-white/30";
-}
-
-function EventRow({ e }: { e: ArenaEvent }) {
-  const [open, setOpen] = useState(false);
+/** 可折叠事件块：标题行 + 全文正文（展开时超长内容内部滚动） */
+function Collapsible({ label, tone, body, mono = true, defaultOpen = false }: {
+  label: string; tone: string; body: string; mono?: boolean; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
       <button
-        className={`${eventColor(e)} w-full cursor-pointer truncate text-left font-mono text-xs leading-5`}
-        title="点击展开详情"
+        type="button"
+        className={`flex w-full cursor-pointer items-center gap-1.5 text-left ${tone} transition-opacity duration-150 hover:opacity-80`}
         onClick={() => setOpen(!open)}
       >
-        {eventSummary(e)}
+        <Chevron open={open} />
+        <span className="truncate text-xs">{label}</span>
       </button>
-      {open && (
-        <div className="max-h-48 overflow-auto rounded-xl border border-white/10 bg-black/40 p-2 font-mono text-xs break-all whitespace-pre-wrap text-white/70">
-          {eventFull(e)}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <pre
+              className={`mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/30 p-2 text-xs leading-5 text-white/70 ${mono ? "font-mono" : ""}`}
+            >
+              {body}
+            </pre>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-// 轨迹时间线：事件流入时自动滚动到底部；用户上滚即暂停跟随，可一键回到最新；支持按事件类型过滤
+function EventBlock({ e }: { e: ArenaEvent }) {
+  switch (e.kind) {
+    case "message":
+      // 助手回复：默认全文展开
+      return (
+        <Collapsible label="回复" tone="text-white/85 font-medium" body={e.text} mono={false} defaultOpen />
+      );
+    case "thinking":
+      return <Collapsible label={`思考（${e.text.length} 字）`} tone="text-violet-300" body={e.text} />;
+    case "tool_call":
+      return (
+        <Collapsible
+          label={`调用工具 ${e.tool}`}
+          tone="text-sky-300"
+          body={(() => {
+            try { return JSON.stringify((e as { input?: unknown }).input, null, 2); } catch { return ""; }
+          })()}
+        />
+      );
+    case "tool_result":
+      return (
+        <Collapsible
+          label={`工具返回${(e as { isError?: boolean }).isError ? "（出错）" : ""}（${e.output.length} 字）`}
+          tone={(e as { isError?: boolean }).isError ? "text-red-300" : "text-emerald-300/80"}
+          body={e.output}
+        />
+      );
+    case "command":
+      return (
+        <div className="font-mono text-xs leading-5 text-white/50">
+          <span className="text-amber-300/80">$ </span>
+          {e.command}
+          {e.exitCode != null && <span className="text-white/30">（退出码 {e.exitCode}）</span>}
+        </div>
+      );
+    case "file_edit":
+      return <div className="font-mono text-xs leading-5 text-sky-300">编辑文件 {e.path}</div>;
+    case "error":
+      return <div className="whitespace-pre-wrap font-mono text-xs leading-5 text-red-300">错误：{e.text}</div>;
+    case "done":
+      return (
+        <div className="font-mono text-xs leading-5 text-emerald-300/80">
+          完成{e.usage ? `（tokens ${e.usage.input} → ${e.usage.output}` : ""}{e.costUsd != null ? ` · $${e.costUsd.toFixed(4)}` : ""}{e.usage ? "）" : ""}
+        </div>
+      );
+    default:
+      // system 等运行日志：单行弱化，悬停看全文
+      return (
+        <div className="truncate font-mono text-xs leading-5 text-white/30" title={e.text}>
+          [系统] {e.text}
+        </div>
+      );
+  }
+}
+
 export default function TrajectoryView({ events }: { events: ArenaEvent[] }) {
-  const GROUPS: { key: string; label: string; kinds: string[] }[] = [
-    { key: "all", label: "全部", kinds: [] },
-    { key: "msg", label: "消息", kinds: ["message"] },
-    { key: "think", label: "思考", kinds: ["thinking"] },
-    { key: "tool", label: "工具", kinds: ["tool_call", "tool_result", "command"] },
-    { key: "file", label: "文件", kinds: ["file_edit"] },
-    { key: "err", label: "异常", kinds: ["error", "system"] },
-  ];
   const boxRef = useRef<HTMLDivElement>(null);
-  const [follow, setFollow] = useState(true);
-  const [group, setGroup] = useState("all");
-  const shown = group === "all" ? events : events.filter((e) => GROUPS.find((g) => g.key === group)!.kinds.includes(e.kind));
-
+  // 系统调试日志（CLI 的 stderr INFO 行、init 通知等）不进对话流：留档于 trajectory.jsonl，真错误以 error 事件上屏
+  const visible = events.filter((e) => e.kind !== "system");
+  // 新事件到达时自动滚动到底部（用户向上翻阅时不打断）
   useEffect(() => {
-    if (follow && boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
-  }, [shown.length, follow]);
-
-  const onScroll = () => {
     const el = boxRef.current;
     if (!el) return;
-    setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 48);
-  };
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [events]);
 
   return (
-    <div className="relative space-y-1.5">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {GROUPS.map((g) => (
-          <button
-            key={g.key}
-            className={`cursor-pointer rounded-full px-2 py-0.5 text-[10px] transition-colors duration-200 ${group === g.key ? "bg-sky-400/20 text-sky-300" : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"}`}
-            onClick={() => setGroup(g.key)}
-          >
-            {g.label}
-          </button>
-        ))}
-      </div>
-      <div
-        ref={boxRef}
-        onScroll={onScroll}
-        className="h-48 space-y-0.5 overflow-y-auto rounded-2xl border border-white/10 bg-black/40 p-2.5 shadow-inner"
-      >
-        {shown.length === 0 && <div className="text-xs text-white/30">等待事件…</div>}
-        {shown.map((e, i) => <EventRow key={i} e={e} />)}
-      </div>
-      {!follow && (
-        <button
-          onClick={() => { setFollow(true); if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight; }}
-          className="absolute right-3 bottom-3 cursor-pointer rounded-full bg-sky-500/80 px-2.5 py-1 text-[10px] font-medium text-white shadow-lg shadow-sky-500/25"
+    <div ref={boxRef} className="h-96 shrink-0 space-y-1.5 overflow-y-auto rounded-2xl border border-white/10 bg-black/40 p-2.5 shadow-inner">
+      {visible.length === 0 && <div className="text-xs text-white/30">等待事件…</div>}
+      {visible.map((e, i) => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
         >
-          ↓ 回到最新
-        </button>
-      )}
+          <EventBlock e={e} />
+        </motion.div>
+      ))}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion } from "motion/react";
 
 type MatchRow = { id: string; prompt: string; combos: string; status: string; createdAt: string };
 
@@ -46,8 +47,20 @@ export default function HistoryPage() {
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-4 p-8">
-      <h1 className="text-2xl font-bold tracking-tight text-white/90">历史对局</h1>
-      <div className="glass flex flex-wrap items-center gap-2 rounded-full p-2">
+      <motion.h1
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: "easeOut" }}
+        className="text-2xl font-bold tracking-tight text-white/90"
+      >
+        历史对局
+      </motion.h1>
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.06, duration: 0.35, ease: "easeOut" }}
+        className="glass flex flex-wrap items-center gap-2 rounded-full p-2"
+      >
         <input
           className="glass-input min-w-40 flex-1 rounded-full px-3 py-1.5 text-xs text-white/85 outline-none placeholder-white/30"
           placeholder="搜索 prompt 或对局 id…"
@@ -63,18 +76,31 @@ export default function HistoryPage() {
           {harnessOptions.map((h) => <option key={h} value={h}>{h}</option>)}
         </select>
         <span className="px-2 text-xs whitespace-nowrap text-white/40">{filtered.length} / {matches.length}</span>
-      </div>
+      </motion.div>
       {filtered.length === 0 && (
-        <div className="glass rounded-3xl p-8 text-center text-sm text-white/40">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12, duration: 0.35, ease: "easeOut" }}
+          className="glass rounded-3xl p-8 text-center text-sm text-white/40"
+        >
           {matches.length === 0 ? "还没有对局" : "没有匹配的对局"}
-        </div>
+        </motion.div>
       )}
       <div className="space-y-3">
-        {filtered.map((m) => (
-          <div key={m.id} className="relative">
+        <AnimatePresence mode="popLayout">
+          {filtered.map((m, i) => (
+            <motion.div
+              key={m.id}
+              layout
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0, transition: { delay: Math.min(i * 0.04, 0.4), duration: 0.3, ease: "easeOut" } }}
+              exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
+              className="relative group"
+            >
             <Link
               href={`/match/${m.id}`}
-              className="glass block cursor-pointer rounded-3xl p-4 pr-10 transition-colors duration-200 hover:bg-white/10"
+              className="glass block cursor-pointer rounded-3xl p-4 pr-10"
             >
               <div className="flex items-center gap-2 font-mono text-xs text-white/35">
                 <span className="truncate">{m.id}</span>
@@ -88,6 +114,11 @@ export default function HistoryPage() {
                 {JSON.parse(m.combos).map((c: { harness: string; model: string }) => `${c.harness}×${c.model}`).join("，")}
               </div>
             </Link>
+            {/* 悬停提亮：玻璃元素的兄弟遮罩层（勿放进玻璃元素内部——会触发 Chromium 逐帧重滤波导致底部闪烁） */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-3xl bg-white/5 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+            />
             <button
               className="absolute top-3 right-3 cursor-pointer rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/50 hover:bg-red-400/20 hover:text-red-300 disabled:opacity-40"
               title="删除对局"
@@ -96,8 +127,9 @@ export default function HistoryPage() {
             >
               {deleting === m.id ? "…" : "✕"}
             </button>
-          </div>
-        ))}
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </main>
   );

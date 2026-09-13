@@ -18,12 +18,19 @@ describe("opencode adapter", () => {
     ];
     expect(evs[0].kind).toBe("message");
     expect((evs[0] as any).text).toBe("OK");
-    const done = evs.find((e) => e.kind === "done");
-    expect(done).toBeDefined();
-    expect((done as any).usage).toEqual({ input: 32, output: 1 });
-    expect((done as any).costUsd).toBe(0);
-    // done 已由 step_finish 发出，flush 不应重复
-    expect(parser.flush?.()).toHaveLength(0);
+    // step_finish 不再直接发 done；flush 时统一发出
+    expect(evs.find((e) => e.kind === "done")).toBeUndefined();
+    const done = parser.flush?.()[0];
+    expect(done?.kind).toBe("done");
+    expect((done as any).usage).toEqual({ input: 32, output: 1, cacheRead: 0 });
+  });
+
+  it("accumulates usage across step_finish (收尾空转 step 不得覆盖累计值)", () => {
+    const parser = opencodeAdapter.createParser();
+    parser.parse('{"type":"step_finish","part":{"tokens":{"input":100,"output":50}}}');
+    parser.parse('{"type":"step_finish","part":{"tokens":{"input":35,"output":0,"cache":{"read":10}}}}');
+    const done = parser.flush?.()[0];
+    expect((done as any).usage).toEqual({ input: 135, output: 50, cacheRead: 10 });
   });
 
   it("maps tool_use envelopes to tool_call and file_edit (Task 0/E2E 实测)", () => {

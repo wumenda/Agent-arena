@@ -1,4 +1,4 @@
-# 模型-Agent竞技场（Model-Agent Arena）
+# Agent竞技场（Model-Agent Arena）
 
 让用户用同一条自由输入的提示词，并排对比多个「harness × 模型」组合的执行过程与结果，辅助模型/harness 选型的个人本地工具。
 

@@ -1,6 +1,6 @@
-import { spawnSync } from "node:child_process";
 import type { ArenaEvent, Combo } from "../types";
 import type { HarnessAdapter, LineParser } from "./registry";
+import { parseClaudeSettingsModels, readHomeFile, runVersion } from "./model-probe";
 
 const now = () => Date.now();
 
@@ -10,8 +10,17 @@ export const claudeCodeAdapter: HarnessAdapter = {
   // 接入火山方舟 Agent Plan（glm-5.3-flash）；sonnet/opus/haiku 别名经 ANTHROPIC_DEFAULT_*_MODEL 映射到同一模型
   models: ["glm-5.3-flash", "sonnet", "opus", "haiku"],
   detect: async () => {
-    const r = spawnSync("claude", ["--version"], { shell: true, encoding: "utf8" });
-    return { harness: "claude-code", installed: r.status === 0, detail: (r.stdout || r.stderr || "").trim() };
+    // 异步探测版本（同步 spawn 会阻塞事件循环，期间整站请求排队）
+    const r = await runVersion("claude");
+    // 动态模型：~/.claude/settings.json 的 env 映射（ANTHROPIC_MODEL / ANTHROPIC_DEFAULT_*_MODEL）+ 别名
+    const settings = readHomeFile(".claude", "settings.json");
+    const models = settings ? parseClaudeSettingsModels(settings) : [];
+    return {
+      harness: "claude-code",
+      installed: r.ok,
+      detail: r.detail,
+      models: models.length ? models : undefined,
+    };
   },
   buildCommand: (combo: Combo, workdir: string) => ({
     file: "claude",
@@ -53,8 +62,8 @@ export const claudeCodeAdapter: HarnessAdapter = {
       } else if (j.type === "result") {
         out.push({
           kind: "done",
-          usage: j.usage ? { input: j.usage.input_tokens ?? 0, output: j.usage.output_tokens ?? 0 } : undefined,
-          costUsd: j.total_cost_usd,
+          usage: j.usage ? { input: j.usage.input_tokens ?? 0, output: j.usage.output_tokens ?? 0, cacheRead: j.usage.cache_read_input_tokens ?? 0 } : undefined,
+          costUsd: j.total_cost_usd, // 仅作参考；落库前会被 runner 按 pricing.ts 统一重算
           ts: now(),
         });
       }

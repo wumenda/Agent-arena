@@ -16,16 +16,23 @@ const TEMPLATES: { name: string; combos: { harness: string; model: string }[] }[
   { name: "单跑 OpenCode", combos: [{ harness: "opencode", model: "ark/glm-5.2" }] },
 ];
 
-export default function ConfigForm({ initial }: { initial?: MatchConfig | null }) {
+export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }: {
+  initial?: MatchConfig | null;
+  modelsByHarness?: Record<string, string[]>;
+  onRefreshModels?: () => void;
+}) {
   const router = useRouter();
   const initialCombos = initial?.combos ?? [{ harness: "claude-code", model: "sonnet" }];
   const nextId = useRef(initialCombos.length + 1);
   const [prompt, setPrompt] = useState(initial?.prompt ?? "");
+  const [sourceDir, setSourceDir] = useState(initial?.sourceDir ?? "");
   const [combos, setCombos] = useState<ComboRow[]>(
     initialCombos.map((c, i) => ({ ...c, id: i + 1 }))
   );
   const [submitting, setSubmitting] = useState(false);
   const est = estimateCost(combos as Combo[]);
+  // 模型只能从本地已配置列表选择；存在未选模型的组合时拦截开跑
+  const missingModel = combos.some((c) => !c.model.trim());
 
   // 配置记忆：挂载时（无 initial 回显才）恢复上次组合；id 重新生成避免与 nextId 冲突
   useEffect(() => {
@@ -52,7 +59,11 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
     const res = await fetch("/api/matches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, combos: combos.map(({ harness, model }) => ({ harness, model })) }),
+      body: JSON.stringify({
+        prompt,
+        combos: combos.map(({ harness, model }) => ({ harness, model })),
+        ...(sourceDir.trim() ? { sourceDir: sourceDir.trim() } : {}),
+      }),
     });
     const data = await res.json();
     setSubmitting(false);
@@ -78,18 +89,30 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
       />
+      <input
+        className="glass-input w-full rounded-xl px-3 py-2 font-mono text-xs text-white/90 placeholder-white/30 transition focus:border-sky-400/50 focus:ring-2 focus:ring-sky-400/20 focus:outline-none"
+        placeholder="题目项目路径（可选）：填一个含 bug 的项目目录，会各复制一份到每个 agent 的独立工作目录"
+        value={sourceDir}
+        onChange={(e) => setSourceDir(e.target.value)}
+      />
       <div className="space-y-2">
         <AnimatePresence initial={false}>
-          {combos.map((c) => (
+          {combos.map((c, i) => (
             <motion.div
               key={c.id}
               layout
               initial={{ opacity: 0, y: -10, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
-              className="glass flex items-center gap-2 rounded-2xl p-2"
+              className="glass relative flex items-center gap-2 rounded-2xl p-2"
+              style={{ zIndex: combos.length - i }}
             >
-              <ModelSelect value={c} onChange={(v) => setCombos(combos.map((x) => (x.id === c.id ? { ...x, ...v } : x)))} />
+              <ModelSelect
+                value={c}
+                modelsByHarness={modelsByHarness}
+                onRefreshModels={onRefreshModels}
+                onChange={(v) => setCombos(combos.map((x) => (x.id === c.id ? { ...x, ...v } : x)))}
+              />
               <motion.button
                 whileTap={{ scale: 0.92 }}
                 className="cursor-pointer rounded-full px-3 py-1 text-sm text-red-400 transition-colors duration-200 hover:bg-red-400/10 hover:text-red-300"
@@ -114,7 +137,7 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
         </div>
         <motion.button
           whileTap={{ scale: 0.95 }}
-          className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-white"
+          className="glass cursor-pointer rounded-full px-4 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white"
           onClick={() => setCombos([...combos, { id: nextId.current++, harness: "opencode", model: "ark/glm-5.2" }])}
         >
           + 添加组合
@@ -124,10 +147,15 @@ export default function ConfigForm({ initial }: { initial?: MatchConfig | null }
         预估成本：<span className="font-mono text-white/80">${est.low} – ${est.high}</span>
         （{combos.length} 个组合并行，单运行超时 15 分钟）
       </div>
+      {missingModel && (
+        <div className="text-xs text-amber-300/90">
+          有组合尚未选择模型：请在该 harness 完成本地登录/配置后，从模型下拉选择（或点「重新探测」）
+        </div>
+      )}
       <motion.button
         whileTap={{ scale: 0.96 }}
         className="flex cursor-pointer items-center gap-2 rounded-full bg-[#0a84ff] px-6 py-2 font-medium text-white shadow-lg shadow-sky-500/25 transition-colors duration-200 hover:bg-[#409cff] disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={!prompt.trim() || combos.length === 0 || submitting}
+        disabled={!prompt.trim() || combos.length === 0 || missingModel || submitting}
         onClick={start}
       >
         {submitting && (
