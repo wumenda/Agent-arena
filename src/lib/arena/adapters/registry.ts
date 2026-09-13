@@ -43,3 +43,15 @@ export const adapters: Record<string, HarnessAdapter> = {
   [qoderAdapter.id]: qoderAdapter,
   [piAdapter.id]: piAdapter,
 };
+
+// detect 结果短缓存：探测要起多个 CLI 子进程，避免每次进页面都重复起进程；
+// force=1 绕过（ccswitch 切换供应商后需强制刷新）。缓存放领域层而非路由层，路由保持薄壳
+const DETECT_TTL_MS = 30_000;
+let detectCache: { at: number; results: DetectResult[] } | null = null;
+
+export async function detectAll(force = false): Promise<DetectResult[]> {
+  if (!force && detectCache && Date.now() - detectCache.at < DETECT_TTL_MS) return detectCache.results;
+  const results = await Promise.all(Object.values(adapters).map((a) => a.detect()));
+  detectCache = { at: Date.now(), results };
+  return results;
+}

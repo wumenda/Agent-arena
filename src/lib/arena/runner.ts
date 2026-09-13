@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, appendFileSync } from "node:fs";
 import path from "node:path";
 import pLimit from "p-limit";
+import { customAlphabet } from "nanoid";
 import { getMatch, getRun, createRun, updateRun, updateMatch, listRuns, getMatchCombos } from "@/lib/db";
 import { toRunDTO } from "@/lib/db/schema";
 import { adapters } from "./adapters/registry";
@@ -32,9 +33,17 @@ const STDERR_WARN_RE = /\bWARN(?:ING)?\b/;
 const STDERR_ERR_LEVEL_RE = /\b(ERROR|FATAL|PANIC)\b/;
 const STDERR_ERR_RE = /\b(error|failed|fatal|panic|exception|unauthorized|forbidden|invalid|refused|timed out|timeout|rate.?limit|quota|econn|disconnect)\b/i;
 
-// 运行中子进程登记：支持用户手动停止
-const activeChildren = new Map<string, ChildProcess>();
-const manualStops = new Set<string>();
+// 运行中子进程登记：支持用户手动停止。挂到 globalThis——dev 热重载会在同一进程重新执行本模块，
+// 模块级登记随旧实例失联后，旧 run 将无法手动停止/自动收尾
+const g = globalThis as typeof globalThis & {
+  __arenaActiveChildren?: Map<string, ChildProcess>;
+  __arenaManualStops?: Set<string>;
+};
+const activeChildren = (g.__arenaActiveChildren ??= new Map());
+const manualStops = (g.__arenaManualStops ??= new Set());
+
+// runId 生成：nanoid 规避同毫秒 Date.now 拼接的撞键概率；r/x 前缀仅人眼区分首轮与重跑
+const runNano = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
 /** 手动停止指定 run：杀进程树，close 后按 failed 落库（error=用户手动停止）。未在运行返回 false */
 export function stopRun(runId: string): boolean {
@@ -236,10 +245,21 @@ async function executeTurn(opts: {
   emitRunStatus(matchId, runId, finalStatus ?? "failed", stopReason ?? undefined);
 }
 
-/** fake 命令解析：ARENA_FAKE_CMD_<harness> / ARENA_FAKE_CMD 指定测试替身（打印行即 message 事件） */
+/**
+ * fake 命令解析：ARENA_FAKE_CMD_<harness> / ARENA_FAKE_CMD 指定测试替身（打印行即 message 事件）。
+ * 支持两种形式：普通字符串按空格切分；JSON 数组字符串（如 '["node","C:/my dir/fake.js"]'）
+ * 原样作为 argv 直调（关 shell，由 Node 转义），规避路径含空格被空格切分解析错的问题。
+ */
 function resolveFake(harness: string): TurnCmd | null {
   const fake = process.env[`ARENA_FAKE_CMD_${harness}`] ?? process.env.ARENA_FAKE_CMD;
   if (!fake) return null;
+  try {
+    const j: unknown = JSON.parse(fake);
+    if (Array.isArray(j) && j.length > 0 && j.every((s) => typeof s === "string")) {
+      const [file, ...args] = j as string[];
+      return { file, args, stdin: undefined, shell: false };
+    }
+  } catch { /* 非 JSON 按空格切分 */ }
   const parts = fake.split(" ");
   return { file: parts[0], args: parts.slice(1), stdin: undefined, shell: true };
 }
@@ -327,7 +347,7 @@ export async function runMatch(matchId: string) {
   emit({ channel: "match-status", matchId, status: "running" });
   const combos = getMatchCombos(matchId);
   await Promise.all(combos.map((c, i) =>
-    globalLimit(() => executeRun(matchId, match.prompt, c, `r${i}_${Date.now().toString(36)}`, match.sourceDir)
+    globalLimit(() => executeRun(matchId, match.prompt, c, `r${i}_${runNano()}`, match.sourceDir)
       .catch(() => {/* executeRun 内部已落库失败态 */}))
   ));
   const finalRuns = listRuns(matchId);
@@ -336,7 +356,7 @@ export async function runMatch(matchId: string) {
   emit({ channel: "match-status", matchId, status: allOk ? "completed" : "partial" });
 }
 
-/** 同对局追加重跑：不建新对局，新旧 runs 同屏对比（runId 加 x 前缀避免与首轮 r{i}_ 冲突） */
+/** 同对局追加重跑：不建新对局，新旧 runs 同屏对比（x 前缀便于人眼区分重跑轮） */
 export async function rerunCombos(matchId: string, combos: Combo[]) {
   const match = getMatch(matchId);
   if (!match) throw new Error(`match ${matchId} not found`);
@@ -345,9 +365,8 @@ export async function rerunCombos(matchId: string, combos: Combo[]) {
   }
   updateMatch(matchId, { status: "running" });
   emit({ channel: "match-status", matchId, status: "running" });
-  const stamp = Date.now().toString(36);
-  await Promise.all(combos.map((c, i) =>
-    globalLimit(() => executeRun(matchId, match.prompt, c, `x${stamp}${i}`, match.sourceDir)
+  await Promise.all(combos.map((c) =>
+    globalLimit(() => executeRun(matchId, match.prompt, c, `x${runNano()}`, match.sourceDir)
       .catch(() => {/* executeRun 内部已落库失败态 */}))
   ));
   const finalRuns = listRuns(matchId);

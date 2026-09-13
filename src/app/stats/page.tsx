@@ -22,11 +22,17 @@ export default function StatsPage() {
   const [byHarness, setByHarness] = useState<HarnessStat[]>([]);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   useEffect(() => {
-    fetch("/api/stats").then((r) => r.json()).then((d) => {
-      setStats(d.stats ?? []);
-      setByHarness(d.byHarness ?? []);
-      setTrend(d.trend ?? []);
-    });
+    // 首屏 + 5s 轮询：新对局跑完后统计自动跟上（本地工具，简单轮询即可）
+    const refresh = () => {
+      fetch("/api/stats").then((r) => r.json()).then((d) => {
+        setStats(d.stats ?? []);
+        setByHarness(d.byHarness ?? []);
+        setTrend(d.trend ?? []);
+      }).catch(() => {});
+    };
+    refresh();
+    const t = setInterval(refresh, 5000);
+    return () => clearInterval(t);
   }, []);
 
   const maxHarnessTotal = Math.max(1, ...byHarness.map((h) => h.total));

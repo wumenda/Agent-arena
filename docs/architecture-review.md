@@ -44,7 +44,7 @@ DB 层 (src/lib/db/*)  Drizzle + better-sqlite3，matches/runs 两表
 | 修复验证（反作弊） | ✅ 完整 | `verify.ts` | `git ls-files` 恢复原始测试再跑 `npm test`，防 agent 改测试自证 |
 | 服务预览 + 视觉对比 | ⚠️ 有安全缺口 | `files.ts` + `shot.ts` + `api/screenshot` | URL 嗅探、截图、pixelmatch 像素对比；但 screenshot 路由有路径穿越风险（见 P0-1） |
 | 报告导出 | ✅ 完整 | `report.ts` | Markdown 格式，含指标对比表与最终回答 |
-| 历史与统计页 | ✅ 基础完整 | `history/page.tsx` / `stats/page.tsx` | 无实时刷新，一次性快照（见 P2-4） |
+| 历史与统计页 | ✅ 基础完整 | `history/page.tsx` / `stats/page.tsx` | 无实时刷新，一次性快照（见 P2-10） |
 | 测试体系 | ✅ 扎实 | `tests/` | 纯逻辑单测 / fixture 驱动 / `:memory:` 库 / 真实 spawn 替身全链路 |
 
 **总体判断**：核心功能闭环完整，README 承诺的能力全部落地，无半成品路由或死页面。测试策略是同类个人项目中的高水准——`ARENA_FAKE_CMD` 替身通道让 runner 测试走**真实 spawn 路径**而不依赖真实 CLI 登录态，这是全项目设计最扎实的一块。
@@ -153,7 +153,9 @@ estimator 的 4 档区间与 pricing 的 14 行实价表独立维护，确认页
 `STATUS_STYLE` 三份（`match/[id]/page.tsx:13-19`、`RunPanel.tsx:11-17`、`history/page.tsx:8-14`）；时长格式化 `fmt` 四份。
 **建议**：收口到 `src/lib/arena/format.ts`（或 `src/components/` 下的共享常量），一次修复全局生效。
 
-### P2 — 低优先级改进（记录备查）
+### P2 — 低优先级改进（已实施）
+
+> **实施状态（2026-09-13）**：除 #9 外全部落地。#9 作废——lineage 功能已在早期批次删除（`getLineage`/`LineageChart` 已不在代码中），N+1 不复存在；#6 的「降级 UI 提示」由 screenshot 路由既有 501 文案天然满足（仅补 POSIX 路径），#8 表序本已「先具体后宽泛」（仅补插入规则注释）。
 
 | # | 问题 | 位置 | 建议 |
 |---|---|---|---|
@@ -173,6 +175,8 @@ estimator 的 4 档区间与 pricing 的 14 行实价表独立维护，确认页
 ## 五、建议的实施顺序
 
 依赖关系与收益排序（每步可独立验证，`npm run lint` + `npm test` 守护）：
+
+> **实施状态（2026-09-13）**：第一、二、三批及第四条合并项（P0-2/P0-5）均已实施完成，P2 十项备查改进同步落地（仅 P2-9 作废，见上）。每批落地后均通过 `npx tsc --noEmit` + `npm run lint` + `npm test`（97 用例）回归，并以 `next build` 作最终门禁。
 
 1. **第一批（安全与正确性，改动小）**：P0-1 screenshot 校验与路径防护 → P0-3 统一 JSON 读取与错误格式 → P0-4 删除目录校验 → P0-6 时序收口（顺带删掉前端补拉补偿）。
 2. **第二批（结构性重构，收益最大）**：P1-1 parser 工厂（净删 100-150 行）→ P1-2 harness 清单单源化 → P1-3 runner 特判清除 → P1-4/P1-5 路由样板收口。

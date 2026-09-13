@@ -26,7 +26,7 @@ export default function HistoryPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // offset=0 首屏加载 / 追加下一页
+  // offset=0 首屏加载 / 追加下一页（loadMore 用；首屏与轮询刷新走下方 effect 内联版）
   const load = async (offset: number) => {
     const res = await fetch(`/api/matches?limit=${PAGE_SIZE}&offset=${offset}`);
     const d = await res.json();
@@ -34,14 +34,21 @@ export default function HistoryPage() {
     setHasMore(!!d.hasMore);
   };
 
+  // 首屏 + 5s 轮询：running 对局状态不停留在快照（本地工具，简单轮询即可，不必上 SSE）。
+  // 刷新逻辑内联而非复用 load：react-hooks/set-state-in-effect 规则要求 setState 位于 promise 回调
   useEffect(() => {
-    fetch(`/api/matches?limit=${PAGE_SIZE}&offset=0`)
-      .then((r) => r.json())
-      .then((d) => {
-        setMatches(d.matches ?? []);
-        setHasMore(!!d.hasMore);
-      })
-      .catch(() => {});
+    const refresh = () => {
+      fetch(`/api/matches?limit=${PAGE_SIZE}&offset=0`)
+        .then((r) => r.json())
+        .then((d) => {
+          setMatches(d.matches ?? []);
+          setHasMore(!!d.hasMore);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const t = setInterval(refresh, 5000);
+    return () => clearInterval(t);
   }, []);
 
   const loadMore = async () => {

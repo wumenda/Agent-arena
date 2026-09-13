@@ -8,6 +8,8 @@ import type { TokenUsage } from "./types";
  * 单价单位：USD / 1M tokens。按火山方舟等公开牌价维护，价格调整时改这里即可；
  * 未收录的模型返回 null（UI 显示 n/a），绝不编造成 0。
  */
+// 匹配规则：按数组顺序短路（find 取第一个命中），必须「先具体、后宽泛」排列——
+// 新增更具体的条目要插在宽泛正则（/doubao/、/o\d/、/gpt/ 等）之前，否则会被抢先误匹配
 const TABLE: { re: RegExp; inPrice: number; outPrice: number }[] = [
   // 火山方舟（Ark）
   { re: /glm-5\.3-flash/i, inPrice: 0.05, outPrice: 0.25 },
