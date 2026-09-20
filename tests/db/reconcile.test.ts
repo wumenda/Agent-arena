@@ -1,6 +1,18 @@
 process.env.ARENA_DB = ":memory:";
-import { describe, it, expect } from "vitest";
-import { createMatch, createRun, updateRun, reconcileStaleRuns, getRun, listRuns, getMatch } from "@/lib/db/index";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createMatch, createRun, updateRun, reconcileStaleRuns, cleanupStaleWorkdirs, getRun, listRuns, getMatch } from "@/lib/db/index";
+
+// workdir 根：测试里用临时目录，cleanupStaleWorkdirs 按 DB 里的 workdir 绝对路径删目录
+let tmpRoot: string;
+beforeEach(() => {
+  tmpRoot = mkdtempSync(path.join(os.tmpdir(), "arena-reconcile-"));
+});
+afterEach(() => {
+  rmSync(tmpRoot, { recursive: true, force: true });
+});
 
 describe("reconcileStaleRuns（服务重启后的尸体收敛）", () => {
   it("running/pending 收敛为 failed，对局收敛为 partial；completed 不受影响", () => {
@@ -40,5 +52,48 @@ describe("reconcileStaleRuns（服务重启后的尸体收敛）", () => {
     expect(listRuns(m1.id)[0].status).toBe("failed");
     expect(getMatch(m1.id)!.status).toBe("partial");
     expect(getMatch(m2.id)!.status).toBe("pending"); // m2 无尸体，不动
+  });
+});
+
+describe("cleanupStaleWorkdirs（超期 workdir 清理）", () => {
+  it("keepDays<=0 时不做任何清理", () => {
+    expect(cleanupStaleWorkdirs(0)).toBe(0);
+  });
+
+  it("超期已结束 run 的 workdir 被删除；未超期/运行中的保留", () => {
+    // 三种情况分属不同对局（cleanupStaleWorkdirs 按对局整体判断：对局内还有活动 run 就不删）
+    const mOld = createMatch({ prompt: "old", combos: [{ harness: "codex", model: "y" }] });
+    const mFresh = createMatch({ prompt: "fresh", combos: [{ harness: "codex", model: "y" }] });
+    const mRun = createMatch({ prompt: "run", combos: [{ harness: "codex", model: "y" }] });
+    // 生产布局 <root>/<matchId>/<runId>：dirname(workdir) = 对局目录
+    const oldDir = path.join(tmpRoot, mOld.id);
+    const freshDir = path.join(tmpRoot, mFresh.id);
+    const runningDir = path.join(tmpRoot, mRun.id);
+    for (const d of [oldDir, freshDir, runningDir]) mkdirSync(path.join(d, "r1"), { recursive: true });
+    createRun({ id: "rold", matchId: mOld.id, harness: "codex", model: "y", workdir: path.join(oldDir, "r1") });
+    createRun({ id: "rfresh", matchId: mFresh.id, harness: "codex", model: "y", workdir: path.join(freshDir, "r1") });
+    createRun({ id: "rrun", matchId: mRun.id, harness: "codex", model: "y", workdir: path.join(runningDir, "r1") });
+    // 10 天前结束的、1 天前结束的、运行中的
+    updateRun("rold", { status: "completed", finishedAt: new Date(Date.now() - 10 * 86400000) });
+    updateRun("rfresh", { status: "completed", finishedAt: new Date(Date.now() - 1 * 86400000) });
+    updateRun("rrun", { status: "running" });
+
+    expect(cleanupStaleWorkdirs(7)).toBe(1); // 只删 10 天前的
+    expect(existsSync(oldDir)).toBe(false);
+    expect(existsSync(freshDir)).toBe(true);
+    expect(existsSync(runningDir)).toBe(true);
+  });
+
+  it("对局内还有 pending run 时整目录不删（避免误删仍在使用的目录）", () => {
+    const m = createMatch({ prompt: "p", combos: [{ harness: "codex", model: "y" }] });
+    const dir = path.join(tmpRoot, m.id);
+    mkdirSync(path.join(dir, "r1"), { recursive: true });
+    createRun({ id: "mix1", matchId: m.id, harness: "codex", model: "y", workdir: path.join(dir, "r1") });
+    createRun({ id: "mix2", matchId: m.id, harness: "codex", model: "y", workdir: path.join(dir, "r2") });
+    updateRun("mix1", { status: "completed", finishedAt: new Date(Date.now() - 10 * 86400000) });
+    updateRun("mix2", { status: "pending" });
+
+    cleanupStaleWorkdirs(7);
+    expect(existsSync(dir)).toBe(true); // 有 pending，保守不删整目录
   });
 });

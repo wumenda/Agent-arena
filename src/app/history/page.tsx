@@ -68,6 +68,23 @@ export default function HistoryPage() {
     if (res.ok) setMatches((prev) => prev.filter((m) => m.id !== mid));
   };
 
+  // 批量清理：删除所有非运行中的对局（循环单删接口，接口自带 running 校验）
+  const [clearing, setClearing] = useState(false);
+  const clearFinished = async () => {
+    const done = matches.filter((m) => m.status !== "running" && m.status !== "pending");
+    if (!done.length) return;
+    if (!confirm(`删除 ${done.length} 个已结束对局？轨迹文件将一并清除。`)) return;
+    setClearing(true);
+    try {
+      for (const m of done) {
+        await fetch(`/api/matches/${m.id}`, { method: "DELETE" });
+      }
+      setMatches((prev) => prev.filter((m) => m.status === "running" || m.status === "pending"));
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const harnessOptions = useMemo(
     () => [...new Set(matches.flatMap((m) => JSON.parse(m.combos).map((c: { harness: string }) => c.harness)))].sort(),
     [matches]
@@ -120,6 +137,14 @@ export default function HistoryPage() {
           ]}
         />
         <span className="px-2 text-xs whitespace-nowrap text-white/40">{filtered.length} / {matches.length}</span>
+        <button
+          className="cursor-pointer rounded-full bg-white/5 px-3 py-1.5 text-xs text-white/50 hover:bg-red-400/20 hover:text-red-300 disabled:opacity-40"
+          title="删除全部已结束对局（释放 workdir 磁盘空间）"
+          disabled={clearing || matches.every((m) => m.status === "running" || m.status === "pending")}
+          onClick={clearFinished}
+        >
+          {clearing ? "清理中…" : "清理已结束"}
+        </button>
       </motion.div>
       {filtered.length === 0 && (
         <motion.div

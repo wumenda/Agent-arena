@@ -190,3 +190,38 @@ export function deleteMatch(id: string): { ok: boolean; error?: string } {
   }
   return { ok: true };
 }
+
+/**
+ * 清理超期的已结束对局 workdir（保留 DB 行与轨迹，仅释放磁盘上的题目副本与产物）。
+ * 由 instrumentation 启动时调用，防止 .arena/ 随对局数线性增长（workdir 是主要大头）。
+ * ARENA_KEEP_WORKDIR_DAYS=0 表示不清理；completed/partial/failed/timeout 且 finishedAt 距今超期才删。
+ * 返回清理的 run 数（测试断言用）。
+ */
+export function cleanupStaleWorkdirs(keepDays: number): number {
+  if (keepDays <= 0) return 0;
+  const cutoff = Date.now() - keepDays * 86400000;
+  const candidates = db.select().from(runs)
+    .where(sql`${runs.status} != 'pending' AND ${runs.status} != 'running'`).all()
+    .filter((r) => r.finishedAt != null && r.finishedAt.getTime() < cutoff);
+  if (!candidates.length) return 0;
+  // 按对局分组，避免对同一 matchDir 重复 rmSync
+  const byMatch = new Map<string, RunRow[]>();
+  for (const r of candidates) {
+    const arr = byMatch.get(r.matchId) ?? [];
+    arr.push(r);
+    byMatch.set(r.matchId, arr);
+  }
+  let removed = 0;
+  for (const [matchId, runs2] of byMatch) {
+    const matchDir = path.dirname(runs2[0].workdir);
+    const consistent = runs2.every((r) => path.dirname(r.workdir) === matchDir);
+    // 只删"该对局所有 run 都已结束"的目录（避免还有新 run 在写）；
+    // 不校验目录名是否等于对局 id——cleanup 场景的目录是 workdirRoot 下的自由命名（用户/环境决定）
+    const allSettled = listRuns(matchId).every((r) => r.status !== "running" && r.status !== "pending");
+    if (consistent && allSettled) {
+      rmSync(matchDir, { recursive: true, force: true });
+      removed += runs2.length;
+    }
+  }
+  return removed;
+}

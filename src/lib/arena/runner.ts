@@ -14,6 +14,7 @@ import { killTree } from "./proc";
 import { workdirRoot } from "./paths";
 import { extractPreviewUrl, savePreviewUrl, PREVIEW_PROMPT_HINT } from "./files";
 import { previewHintEnabled } from "./questions";
+import { logArena } from "./logger";
 import type { ArenaEvent, Combo } from "./types";
 
 const CONCURRENCY = Number(process.env.ARENA_CONCURRENCY ?? 3);
@@ -245,6 +246,7 @@ async function executeTurn(opts: {
       activeChildren.delete(runId);
       manualStops.delete(runId);
       updateRun(runId, { status: "failed", error: String(err), finishedAt: new Date(), durationMs: Date.now() - started });
+      logArena("spawn-error", { matchId, runId, harness: combo.harness, error: String(err) });
       emitRunStatus(matchId, runId, "failed", String(err));
       resolve();
     });
@@ -271,6 +273,7 @@ async function executeTurn(opts: {
       const turnMs = Date.now() - started;
       const durationMs = opts.accumulate ? (opts.base?.durationMs ?? 0) + turnMs : turnMs;
       updateRun(runId, { status: finalStatus, finishedAt: new Date(), durationMs, error: stopReason ?? undefined });
+      logArena("run-finished", { matchId, runId, harness: combo.harness, model: combo.model, status: finalStatus, durationMs, error: stopReason ?? undefined, timeout: timedOut });
       resolve();
     });
   });

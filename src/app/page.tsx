@@ -40,6 +40,18 @@ export default function Home() {
     detect.filter((d) => d.models?.length).map((d) => [d.harness, d.models!])
   );
 
+  // 就绪状态：密钥是否已配置（一句话解析前置）；CLI 安装数（detect 已返回）
+  const [hasCredentials, setHasCredentials] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/ready").then((r) => r.json()).then((d) => setHasCredentials(!!d.hasCredentials)).catch(() => {});
+  }, []);
+  const installedCount = detect.filter((d) => d.installed).length;
+  const missingHarnesses = detect.filter((d) => !d.installed).map((d) => d.harness);
+  const readinessIssues: string[] = [];
+  if (hasCredentials === false) readinessIssues.push("未配置 ARK 密钥（.env.local），一句话解析不可用，可手动配置对局");
+  if (installedCount === 0) readinessIssues.push("未探测到任何已安装的 harness CLI");
+  else if (missingHarnesses.length) readinessIssues.push(`未安装：${missingHarnesses.join("、")}（已装 ${installedCount} 个）`);
+
   const parse = async () => {
     setParsing(true);
     setParseError("");
@@ -58,6 +70,20 @@ export default function Home() {
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 p-8">
+      {/* 就绪横幅：密钥/CLI 缺失提示（探测结果未回时不高亮，避免首帧闪烁） */}
+      {hasCredentials != null && readinessIssues.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-2.5 text-xs text-amber-200"
+        >
+          <span className="font-medium">就绪提示</span>
+          {readinessIssues.map((issue, i) => (
+            <span key={i} className="text-amber-200/80">{issue}</span>
+          ))}
+        </motion.div>
+      )}
       {/* Hero：交错入场 */}
       <div className="space-y-2 pt-4 text-center">
         <motion.h1
