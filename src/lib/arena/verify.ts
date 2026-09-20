@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { killTree } from "./proc";
+import { childEnv } from "./runner";
 export type VerifyStatus = "passed" | "failed" | "skipped";
 export type VerifyResult = { status: VerifyStatus; log: string };
 
@@ -65,7 +66,7 @@ export async function verifyFix(
   const chunks: string[] = [];
   let timedOut = false;
   const code = await new Promise<number>((resolve) => {
-    const child = spawn("npm", ["test"], { cwd: workdir, shell: true, env: { ...process.env } });
+    const child = spawn("npm", ["test"], { cwd: workdir, shell: true, env: childEnv() });
     const timer = setTimeout(() => {
       timedOut = true;
       if (child.pid) killTree(child.pid);

@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Model-Agent Arena（Agent 竞技场）
 
-## Getting Started
+本地个人工具：用同一条提示词并排对比多个「harness × 模型」组合的执行过程与结果（修复 bug / 实现功能 / 产出网页）。
 
-First, run the development server:
+## 快速开始
+
+前置：Node.js 20+，本机已安装至少一个要对比的 CLI（claude / codex / opencode / traecli / codebuddy / qodercli / pi），
+并准备一个方舟（Volcano Ark）API Key。
 
 ```bash
+# 1. 配置密钥（仅本地，不入库；未配置时"一句话解析"不可用，可手动配置对局）
+cp .env.example .env.local   # 编辑填入 ARK_BASE_URL / ARK_API_KEY / ARK_MODEL
+
+# 2. 开发模式
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 生产模式（默认仅监听 127.0.0.1，不暴露到局域网）
+npm run build && npm start
+
+# 3. 打开 http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 使用
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- 首页输入一句话（如「对比 claude 和 codex 修好 debounce 的 bug」），确认解析结果后开跑；
+- 对局页实时看轨迹（SSE）、预览产物、续聊、重跑、导出报告、视觉对比；
+- 题库：内置 `questions/`（算法 / JS bug / 网页小游戏），用户题库放 `.arena/questions/`。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 安全与权限模型（重要）
 
-## Learn More
+- `npm start` 默认只监听 `127.0.0.1`。若需局域网访问，手动 `next start -H 0.0.0.0`，并知晓：
+  **本服务无鉴权**，能访问端口的人可读取所有对局内容（prompt、源码产物、轨迹）并可触发对局（消耗你的 LLM 额度）。
+- **agent 以无权限确认模式运行**（claude `--dangerously-skip-permissions` / codex `--sandbox workspace-write` / codebuddy `-y` 等），
+  可读写本机文件、执行命令——请只运行**可信题目**。运行目录是临时 workdir（ADR-0001，无容器沙箱）。
+- agent 子进程**不会继承** `ARK_API_KEY` 等密钥环境变量（见 `runner.ts` 的 env 过滤）；密钥只经 `.env.local` 注入服务端。
 
-To learn more about Next.js, take a look at the following resources:
+## 配置项（环境变量）
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `ARK_BASE_URL` / `ARK_API_KEY` / `ARK_MODEL` | — | 一句话解析（LLM 配置解析器） |
+| `ARENA_DB` | `.arena/arena.db` | SQLite 数据库路径 |
+| `ARENA_WORKDIR_ROOT` | 系统 tmp 下的 `model-agent-arena/runs` | 运行工作目录根 |
+| `ARENA_CONCURRENCY` | 3 | 全局并发子进程数 |
+| `ARENA_TIMEOUT_MS` | 15 分钟 | 单 run 总超时 |
+| `ARENA_IDLE_TIMEOUT_MS` | 5 分钟 | 静默看门狗（无任何事件则自动停止） |
+| `ARENA_VERIFY_TIMEOUT_MS` | 5 分钟 | 修复验证超时 |
+| `ARENA_NET_ERR_LIMIT` | 3 | 连续网络错误自动停止阈值 |
+| `ARENA_PREVIEW_PORT_BLACKLIST` | — | 预览地址黑名单端口（逗号分隔） |
+| `ARENA_FAKE_CMD` / `ARENA_FAKE_CMD_<harness>` | — | 测试替身命令（测试用，勿在生产设置） |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 目录结构
 
-## Deploy on Vercel
+```
+src/app         页面与 API 路由（16 个 route，边界均 zod 校验）
+src/lib/arena   领域层：runner 执行引擎、adapters（7 个 harness）、parser/verify/pricing/report/…
+src/lib/db      Drizzle + better-sqlite3（matches/runs 两表）
+questions/      内置题库（bank.json + 题目目录）
+tests/          vitest（23+ 文件，fixture 驱动，不依赖真实 CLI）
+docs/           评审报告（architecture / performance / tri-review / fourth-pass）与 ADR
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 开发约定
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+见 [AGENTS.md](AGENTS.md)（领域术语、zod 边界、adapter 归一化、密钥安全、测试要求等）与 [CONTEXT.md](CONTEXT.md)（术语表）。
+
+## 新增 harness
+
+按 AGENTS.md 第 5 条：实现 `HarnessAdapter`（buildCommand + createParser），注册到 `adapters/registry.ts`，
+在 `adapters/meta.ts` 加一行，补 fixture 与测试（可参考 `tests/arena/runner.test.ts` 的 PATH shim 半集成用例，不依赖真实 CLI 登录态）。

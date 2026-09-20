@@ -120,7 +120,13 @@ export default function TrajectoryView({ events }: { events: ArenaEvent[] }) {
   // 窗口截断：只渲染最近 MAX_VISIBLE 条（长对局事件可达上万，全量 DOM + motion 动画会卡死浏览器）。
   // 完整轨迹始终存于 trajectory.jsonl（可导出报告/轨迹页面查看），此处仅 UI 展示窗口。
   const MAX_VISIBLE = 800;
-  const windowEvents = visible.length > MAX_VISIBLE ? visible.slice(-MAX_VISIBLE) : visible;
+  // 截断时默认跟随尾部（最新进展），用户可"回看开头"翻页查看旧事件（窗口平移，不破坏轻量渲染）
+  const [windowStart, setWindowStart] = useState(0);
+  const isTruncated = visible.length > MAX_VISIBLE;
+  const tailStart = isTruncated ? visible.length - MAX_VISIBLE : 0;
+  // 跟随尾部：默认起始位置 = 尾部起点；用户翻页后手动设置
+  const start = isTruncated && windowStart > tailStart ? tailStart : windowStart;
+  const windowEvents = isTruncated ? visible.slice(start, start + MAX_VISIBLE) : visible;
   // 新事件到达时自动滚动到底部（用户向上翻阅时不打断）
   useEffect(() => {
     const el = boxRef.current;
@@ -129,13 +135,24 @@ export default function TrajectoryView({ events }: { events: ArenaEvent[] }) {
     if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [events]);
 
+  // 回看开头：跳到最早窗口；"回到底部"：回到尾窗口
+  const jumpToHead = () => setWindowStart(0);
+  const jumpToTail = () => setWindowStart(tailStart);
+
   return (
     <div ref={boxRef} className="h-96 shrink-0 space-y-1.5 overflow-y-auto rounded-2xl border border-white/10 bg-black/40 p-2.5 shadow-inner">
       {visible.length === 0 && <div className="text-xs text-white/30">等待事件…</div>}
-      {visible.length > MAX_VISIBLE && (
+      {isTruncated && (
         <div className="flex items-center justify-between px-0.5 text-[10px] text-white/30">
-          <span>已显示最近 {MAX_VISIBLE} 条</span>
-          <span>共 {visible.length} 条 · 完整见导出报告</span>
+          <span>已显示第 {start + 1}–{start + windowEvents.length} 条（共 {visible.length} 条）</span>
+          <span className="flex gap-2">
+            {start > 0 ? (
+              <button type="button" className="cursor-pointer hover:text-white" onClick={jumpToHead}>回看开头</button>
+            ) : (
+              <button type="button" className="cursor-pointer hover:text-white" onClick={jumpToTail}>回到底部</button>
+            )}
+            <span>· 完整见导出报告</span>
+          </span>
         </div>
       )}
       {windowEvents.map((e, i) => (

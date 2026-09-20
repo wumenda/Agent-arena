@@ -43,6 +43,28 @@ const g = globalThis as typeof globalThis & {
 const activeChildren = (g.__arenaActiveChildren ??= new Map());
 const manualStops = (g.__arenaManualStops ??= new Set());
 
+// 密钥类环境变量名（不区分大小写匹配；已知的常见后缀 + 白名单变量名）。
+// agent 子进程不继承这些变量——CLI 常把 env 大写键当配置读走（如 ANTHROPIC_API_KEY），
+// 让 agent 拿到 ARK_API_KEY 等同把密钥交给模型（AGENTS.md 第 6 条"不打印不落库"的延伸）
+const SECRET_ENV_RE = /(^|_)(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS?|APIKEY|ACCESS[_-]?KEY)(_|$)/i;
+const SECRET_NAMED = new Set([
+  "ARK_API_KEY", "ARK_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+  "OPENAI_API_KEY", "OPENAI_API_BASE", "AZURE_OPENAI_API_KEY", "GEMINI_API_KEY",
+  "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "GITHUB_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+]);
+
+/** agent 子进程可见的环境变量：剥离密钥（正则 + 白名单双保险），其余透传。
+ * 返回完整 ProcessEnv（spawn 的 env 参数要求）：NODE_ENV 缺失时补 "production"（CLI 的常规行为） */
+export function childEnv(env: NodeJS.Dict<string> = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { NODE_ENV: "production" };
+  for (const [k, v] of Object.entries(env)) {
+    if (v == null) continue;
+    if (SECRET_NAMED.has(k) || SECRET_ENV_RE.test(k)) continue;
+    (out as Record<string, string>)[k] = v;
+  }
+  return out;
+}
+
 // runId 生成：nanoid 规避同毫秒 Date.now 拼接的撞键概率；r/x 前缀仅人眼区分首轮与重跑
 const runNano = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
@@ -177,7 +199,7 @@ async function executeTurn(opts: {
   let stderrBuf = "";
 
   await new Promise<void>((resolve) => {
-    const child = spawn(opts.cmd.file, opts.cmd.args, { cwd: dir, shell: opts.cmd.shell ?? true, env: { ...process.env } });
+    const child = spawn(opts.cmd.file, opts.cmd.args, { cwd: dir, shell: opts.cmd.shell ?? true, env: childEnv() });
     childRef = child;
     resetIdleWatchdog(); // 进程启动即开始监测静默
     activeChildren.set(runId, child);
