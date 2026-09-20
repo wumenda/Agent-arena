@@ -8,6 +8,8 @@ export const matches = sqliteTable("matches", {
   sourceDir: text("source_dir"), // 题目项目源目录（可选）：开跑时复制进每个运行的工作目录
   status: text("status").notNull().default("pending"), // pending|running|completed|partial
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  // 单 run 总超时（毫秒，可空=用全局 ARENA_TIMEOUT_MS）：允许个别慢题放宽，不用整站改 env
+  timeoutMs: integer("timeout_ms"),
 });
 
 // 运行：对局中单个「harness × 模型」组合的一次执行

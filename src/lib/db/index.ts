@@ -25,6 +25,9 @@ function createDb(url: string) {
   if (!cols.some((c) => c.name === "source_dir")) {
     sqlite.exec("ALTER TABLE matches ADD COLUMN source_dir TEXT");
   }
+  if (!cols.some((c) => c.name === "timeout_ms")) {
+    sqlite.exec("ALTER TABLE matches ADD COLUMN timeout_ms INTEGER");
+  }
   const runCols = sqlite.pragma("table_info(runs)") as { name: string }[];
   if (!runCols.some((c) => c.name === "verify_status")) {
     sqlite.exec("ALTER TABLE runs ADD COLUMN verify_status TEXT");
@@ -37,9 +40,9 @@ export const db = createDb(url);
 
 const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
-export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string; sourceDir?: string | null }) {
+export function createMatch(input: { prompt: string; combos: { harness: string; model: string }[]; status?: string; sourceDir?: string | null; timeoutMs?: number | null }) {
   const id = nanoid();
-  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending", sourceDir: input.sourceDir ?? null }).run();
+  db.insert(matches).values({ id, prompt: input.prompt, combos: JSON.stringify(input.combos), status: input.status ?? "pending", sourceDir: input.sourceDir ?? null, timeoutMs: input.timeoutMs ?? null }).run();
   return getMatch(id)!;
 }
 
@@ -47,10 +50,24 @@ export function getMatch(id: string) {
   return db.select().from(matches).where(eq(matches.id, id)).get();
 }
 
-// 对局的组合配置：combos 以 JSON 字符串持久化，解析统一在此收口（runner/路由不再各自 JSON.parse）
+// 对局的组合配置：combos 以 JSON 字符串持久化，解析统一在此收口（runner/路由不再各自 JSON.parse）。
+// 宽容解析：历史库 combos 结构可能演进（缺字段/多字段），解析失败或形状不符时返回 [] 并打日志，
+// 避免"某条旧数据的 JSON.parse 抛错"让整个对局页/重跑 500
 export function getMatchCombos(id: string): Combo[] {
   const m = getMatch(id);
-  return m ? JSON.parse(m.combos) : [];
+  if (!m) return [];
+  try {
+    const parsed: unknown = JSON.parse(m.combos);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((c): c is Combo =>
+      typeof c === "object" && c != null &&
+      typeof (c as { harness?: unknown }).harness === "string" &&
+      typeof (c as { model?: unknown }).model === "string"
+    );
+  } catch {
+    console.warn(`[arena] combos 解析失败（match=${id}），按空组合处理`);
+    return [];
+  }
 }
 
 export function listMatches(limit = 200, offset = 0) {

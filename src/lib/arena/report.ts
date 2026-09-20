@@ -58,8 +58,15 @@ export function buildMatchReport(
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// 对局报告（HTML 单文件）：同一数据源渲染为带内联样式的自包含页面，可直接在浏览器打开或分享
-export function buildMatchReportHtml(match: MatchRow, runs: RunRow[], eventsByRun: Record<string, ArenaEvent[]>): string {
+// 对局报告（HTML 单文件）：同一数据源渲染为带内联样式的自包含页面，可直接在浏览器打开或分享。
+// full=true 时最终回答不截断（默认截 2000 字，防止报告过大；与 markdown 通道行为一致）
+export function buildMatchReportHtml(
+  match: MatchRow,
+  runs: RunRow[],
+  eventsByRun: Record<string, ArenaEvent[]>,
+  opts?: { full?: boolean },
+): string {
+  const full = opts?.full ?? false;
   const statusClass: Record<string, string> = {
     completed: "color:#34d399",
     running: "color:#38bdf8",
@@ -100,7 +107,7 @@ export function buildMatchReportHtml(match: MatchRow, runs: RunRow[], eventsByRu
     ${r.verifyStatus ? ` · 验证 ${esc(r.verifyStatus)}` : ""}
   </p>
   ${files.length ? `<p style="margin:0 0 12px;font-size:13px;color:#94a3b8">产出文件：${files.map((f) => `<code style="color:#7dd3fc">${esc(f)}</code>`).join("、")}</p>` : ""}
-  ${lastMsg ? `<div style="font-size:11px;color:#64748b;margin-bottom:4px">最终回答</div><pre style="margin:0;padding:12px;background:#020617;border-radius:8px;font-size:12px;line-height:1.6;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;max-height:480px;overflow:auto">${esc(lastMsg.text)}</pre>` : ""}
+  ${lastMsg ? `<div style="font-size:11px;color:#64748b;margin-bottom:4px">最终回答${full ? "" : "（前 2000 字）"}</div><pre style="margin:0;padding:12px;background:#020617;border-radius:8px;font-size:12px;line-height:1.6;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;max-height:480px;overflow:auto">${esc(full ? lastMsg.text : lastMsg.text.slice(0, 2000))}</pre>` : ""}
   ${r.error ? `<p style="margin:12px 0 0;font-size:12px;color:#f87171">错误：${esc(r.error)}</p>` : ""}
 </section>`;
   });
@@ -128,7 +135,7 @@ export function buildMatchReportHtml(match: MatchRow, runs: RunRow[], eventsByRu
     </table>
   </div>
   ${sections.join("\n")}
-  <p style="margin:24px 0 0;font-size:11px;color:#475569">由 Agent 竞技场生成 · 最终回答完整未截断</p>
+  <p style="margin:24px 0 0;font-size:11px;color:#475569">由 Agent 竞技场生成 · 最终回答${full ? "完整未截断" : "默认截断（报告可加 full=1 参数导出完整版）"}</p>
 </div>
 </body>
 </html>`;

@@ -5,6 +5,7 @@ import type { MatchRow, RunRow } from "@/lib/db/schema";
 const match: MatchRow = {
   id: "m1", prompt: "写一个贪吃蛇", combos: "[]", status: "completed",
   sourceDir: null,
+  timeoutMs: null,
   createdAt: new Date("2026-09-12T00:00:00Z"),
 };
 const run: RunRow = {
@@ -51,5 +52,17 @@ describe("buildMatchReport", () => {
     expect(html).toContain("snake.html");
     expect(html).not.toContain("<script>alert(1)</script>"); // prompt 已转义
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("HTML 报告默认截断最终回答、full=true 不截断（与 markdown 通道一致）", () => {
+    const longEvents = [
+      { kind: "message", text: "y".repeat(3000) + "END_MARK", ts: 1 },
+    ] as never;
+    const truncated = buildMatchReportHtml(match, [run], { r1: longEvents });
+    expect(truncated).not.toContain("END_MARK");
+    expect(truncated).toContain("前 2000 字");
+    const full = buildMatchReportHtml(match, [run], { r1: longEvents }, { full: true });
+    expect(full).toContain("END_MARK");
+    expect(full).toContain("完整未截断");
   });
 });

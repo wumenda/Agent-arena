@@ -27,7 +27,12 @@ export async function POST(req: NextRequest) {
     }
     sourceDir = dir;
   }
-  const match = createMatch({ prompt: body.data.prompt, combos: body.data.combos, sourceDir });
+  const match = createMatch({
+    prompt: body.data.prompt,
+    combos: body.data.combos,
+    sourceDir,
+    timeoutMs: body.data.timeoutMinutes != null ? body.data.timeoutMinutes * 60_000 : null,
+  });
   // 后台执行，不阻塞响应
   void runMatch(match.id);
   return NextResponse.json({ match }, { status: 201 });

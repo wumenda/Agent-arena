@@ -104,8 +104,11 @@ async function executeTurn(opts: {
   preamble?: ArenaEvent[]; // 进程启动前写入轨迹的事件（续聊的用户提问）
   accumulate?: boolean;
   base?: MetricsBase;
+  timeoutMs?: number | null; // per-match 覆盖；空=全局 TIMEOUT_MS
 }) {
   const { matchId, runId, combo, dir, fake } = opts;
+  // 单轮总超时：per-match 覆盖优先，续聊轮沿用对局的同一超时
+  const runTimeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
   const trajPath = path.join(dir, "trajectory.jsonl");
   const writeTraj = (ev: ArenaEvent) => appendFileSync(trajPath, JSON.stringify(ev) + "\n");
   let doneEmitted = false;
@@ -204,7 +207,7 @@ async function executeTurn(opts: {
     childRef = child;
     resetIdleWatchdog(); // 进程启动即开始监测静默
     activeChildren.set(runId, child);
-    const timer = setTimeout(() => { timedOut = true; killTree(child.pid!); }, TIMEOUT_MS);
+    const timer = setTimeout(() => { timedOut = true; killTree(child.pid!); }, runTimeoutMs);
     const handleLine = (line: string) => {
       if (!line.trim()) return;
       const events = fake ? fakeLineEvents(line) : parser.parse(line);
@@ -321,7 +324,7 @@ function fakeLineEvents(line: string): ArenaEvent[] {
   return [{ kind: "message", text: line, ts: Date.now() }];
 }
 
-async function executeRun(matchId: string, prompt: string, combo: Combo, runId: string, sourceDir?: string | null) {
+async function executeRun(matchId: string, prompt: string, combo: Combo, runId: string, sourceDir?: string | null, matchTimeoutMs?: number | null) {
   const adapter = adapters[combo.harness];
   const dir = path.join(workdirRoot(), matchId, runId);
   mkdirSync(dir, { recursive: true });
@@ -351,7 +354,7 @@ async function executeRun(matchId: string, prompt: string, combo: Combo, runId: 
     const c = adapter.buildCommand(combo, dir, taskPrompt);
     cmd = { ...c, stdin: c.stdin === "__PROMPT__" ? taskPrompt : c.stdin };
   }
-  await executeTurn({ matchId, runId, combo, dir, cmd, fake: !!fake, sourceDir });
+  await executeTurn({ matchId, runId, combo, dir, cmd, fake: !!fake, sourceDir, timeoutMs: matchTimeoutMs });
 }
 
 /**
@@ -387,6 +390,7 @@ export async function continueRun(matchId: string, runId: string, prompt: string
   await executeTurn({
     matchId, runId, combo, dir, cmd, fake: !!fake, sourceDir: match.sourceDir,
     accumulate: true, base,
+    timeoutMs: match.timeoutMs,
     preamble: [{ kind: "user", text: prompt, ts: Date.now() }],
   });
 }
@@ -398,7 +402,7 @@ export async function runMatch(matchId: string) {
   emit({ channel: "match-status", matchId, status: "running" });
   const combos = getMatchCombos(matchId);
   await Promise.all(combos.map((c, i) =>
-    globalLimit(() => executeRun(matchId, match.prompt, c, `r${i}_${runNano()}`, match.sourceDir)
+    globalLimit(() => executeRun(matchId, match.prompt, c, `r${i}_${runNano()}`, match.sourceDir, match.timeoutMs)
       .catch(() => {/* executeRun 内部已落库失败态 */}))
   ));
   const finalRuns = listRuns(matchId);
@@ -417,7 +421,7 @@ export async function rerunCombos(matchId: string, combos: Combo[]) {
   updateMatch(matchId, { status: "running" });
   emit({ channel: "match-status", matchId, status: "running" });
   await Promise.all(combos.map((c) =>
-    globalLimit(() => executeRun(matchId, match.prompt, c, `x${runNano()}`, match.sourceDir)
+    globalLimit(() => executeRun(matchId, match.prompt, c, `x${runNano()}`, match.sourceDir, match.timeoutMs)
       .catch(() => {/* executeRun 内部已落库失败态 */}))
   ));
   const finalRuns = listRuns(matchId);

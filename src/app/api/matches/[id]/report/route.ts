@@ -9,7 +9,8 @@ export const GET = withMatch(({ req, id, match }) => {
   const runs = listRuns(id);
   const eventsByRun = Object.fromEntries(runs.map((r) => [r.id, readTrajectory(r.workdir)]));
   if (req.nextUrl.searchParams.get("format") === "html") {
-    const html = buildMatchReportHtml(match, runs, eventsByRun);
+    const full = req.nextUrl.searchParams.get("full") === "1";
+    const html = buildMatchReportHtml(match, runs, eventsByRun, { full });
     return new NextResponse(html, {
       headers: {
         "Content-Type": "text/html; charset=utf-8",

@@ -21,6 +21,8 @@ export const MatchConfigSchema = z.object({
   prompt: z.string().min(1).max(20000),
   combos: z.array(ComboSchema).min(1).max(24),
   question: QuestionRefSchema.optional(),
+  // 单 run 总超时（分钟，可空=用全局 ARENA_TIMEOUT_MS）：个别慢题放宽用
+  timeoutMinutes: z.number().int().min(1).max(120).optional(),
 });
 export type MatchConfig = z.infer<typeof MatchConfigSchema>;
 

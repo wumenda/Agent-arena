@@ -33,6 +33,14 @@ npm run build && npm start
 - **agent 以无权限确认模式运行**（claude `--dangerously-skip-permissions` / codex `--sandbox workspace-write` / codebuddy `-y` 等），
   可读写本机文件、执行命令——请只运行**可信题目**。运行目录是临时 workdir（ADR-0001，无容器沙箱）。
 - agent 子进程**不会继承** `ARK_API_KEY` 等密钥环境变量（见 `runner.ts` 的 env 过滤）；密钥只经 `.env.local` 注入服务端。
+- **导出报告含模型原始输出与 prompt**（可能复述密钥/内部路径），请勿公开分享；报告默认截断最终回答 2000 字，导出完整版用 `?full=1`。
+
+## 题库
+
+- 内置题库在 `questions/<题库>/<题目>/`：`bank.json`（题库元信息）+ `question.json`（题目元信息）+ 题目项目目录。
+- `bank.json` 可选字段：`name`、`description`、`previewHint`（布尔，默认 true；算法/bug 修复类题库设 `false` 可去掉"起本地服务"的提示词噪声）。
+- 用户题库放 `.arena/questions/`（运行时数据，不入库，同名题库覆盖内置）。
+- 新增题目：在题库目录建题目文件夹，放 `question.json`（`title`/`description`/`prompt`）+ 代码 + `package.json` 的 `test` 脚本（有测试才会跑修复验证）。
 
 ## 配置项（环境变量）
 
@@ -45,6 +53,7 @@ npm run build && npm start
 | `ARENA_TIMEOUT_MS` | 15 分钟 | 单 run 总超时 |
 | `ARENA_IDLE_TIMEOUT_MS` | 5 分钟 | 静默看门狗（无任何事件则自动停止） |
 | `ARENA_VERIFY_TIMEOUT_MS` | 5 分钟 | 修复验证超时 |
+| `ARENA_KEEP_WORKDIR_DAYS` | 0（不清理） | 启动时清理超过 N 天的已结束对局 workdir（释放磁盘） |
 | `ARENA_NET_ERR_LIMIT` | 3 | 连续网络错误自动停止阈值 |
 | `ARENA_PREVIEW_PORT_BLACKLIST` | — | 预览地址黑名单端口（逗号分隔） |
 | `ARENA_FAKE_CMD` / `ARENA_FAKE_CMD_<harness>` | — | 测试替身命令（测试用，勿在生产设置） |

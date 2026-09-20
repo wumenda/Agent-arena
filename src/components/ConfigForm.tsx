@@ -51,6 +51,8 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  // 单运行超时（分钟，空=用全局 ARENA_TIMEOUT_MS）
+  const [timeoutMinutes, setTimeoutMinutes] = useState<number | null>(initial?.timeoutMinutes ?? null);
   // 组合历史实测均值：加载后估算从 tier 区间升级为 tokens×单价 精算
   const [history, setHistory] = useState<ComboHistoryStat[]>([]);
   useEffect(() => {
@@ -103,6 +105,7 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
           prompt,
           combos: combos.map(({ harness, model }) => ({ harness, model })),
           ...(bankId && questionId ? { question: { bank: bankId, id: questionId } } : {}),
+          ...(timeoutMinutes != null ? { timeoutMinutes } : {}),
         }),
       });
       const data = await res.json().catch(() => null);
@@ -230,9 +233,27 @@ export default function ConfigForm({ initial, modelsByHarness, onRefreshModels }
           + 添加组合
         </motion.button>
       </div>
-      <div className="text-sm text-white/50">
-        预估成本：<span className="font-mono text-white/80">${est.low}{est.low === est.high ? "" : ` – $${est.high}`}</span>
-        （{combos.length} 个组合并行，单运行超时 15 分钟{allPrecise ? "，按同组合历史实测 token 均值精算" : "，按模型档位粗估"}）
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/50">
+        <span>
+          预估成本：<span className="font-mono text-white/80">${est.low}{est.low === est.high ? "" : ` – $${est.high}`}</span>
+          （{combos.length} 个组合并行{allPrecise ? "，按同组合历史实测 token 均值精算" : "，按模型档位粗估"}）
+        </span>
+        <label className="flex items-center gap-1.5 text-xs text-white/40">
+          单运行超时
+          <input
+            type="number"
+            min={1}
+            max={120}
+            className="glass-input w-16 rounded-lg px-2 py-1 text-center font-mono text-xs text-white/85 outline-none"
+            value={timeoutMinutes ?? ""}
+            placeholder="15"
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setTimeoutMinutes(Number.isFinite(n) && n > 0 ? n : null);
+            }}
+          />
+          分钟（空=默认）
+        </label>
       </div>
       {missingModel && (
         <div className="text-xs text-amber-300/90">
