@@ -117,6 +117,10 @@ export default function TrajectoryView({ events }: { events: ArenaEvent[] }) {
   const boxRef = useRef<HTMLDivElement>(null);
   // 系统调试日志（CLI 的 stderr INFO 行、init 通知等）不进对话流：留档于 trajectory.jsonl，警告以 warn（黄）、真错误以 error（红）事件上屏
   const visible = events.filter((e) => e.kind !== "system");
+  // 窗口截断：只渲染最近 MAX_VISIBLE 条（长对局事件可达上万，全量 DOM + motion 动画会卡死浏览器）。
+  // 完整轨迹始终存于 trajectory.jsonl（可导出报告/轨迹页面查看），此处仅 UI 展示窗口。
+  const MAX_VISIBLE = 800;
+  const windowEvents = visible.length > MAX_VISIBLE ? visible.slice(-MAX_VISIBLE) : visible;
   // 新事件到达时自动滚动到底部（用户向上翻阅时不打断）
   useEffect(() => {
     const el = boxRef.current;
@@ -128,7 +132,13 @@ export default function TrajectoryView({ events }: { events: ArenaEvent[] }) {
   return (
     <div ref={boxRef} className="h-96 shrink-0 space-y-1.5 overflow-y-auto rounded-2xl border border-white/10 bg-black/40 p-2.5 shadow-inner">
       {visible.length === 0 && <div className="text-xs text-white/30">等待事件…</div>}
-      {visible.map((e, i) => (
+      {visible.length > MAX_VISIBLE && (
+        <div className="flex items-center justify-between px-0.5 text-[10px] text-white/30">
+          <span>已显示最近 {MAX_VISIBLE} 条</span>
+          <span>共 {visible.length} 条 · 完整见导出报告</span>
+        </div>
+      )}
+      {windowEvents.map((e, i) => (
         <motion.div
           key={i}
           initial={{ opacity: 0, x: -8 }}

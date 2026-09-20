@@ -111,8 +111,7 @@ export default function RunPanel({ run, events, matchId, onRerunOne, onStopOne, 
           </button>
         </div>
       )}
-      <TrajectoryView events={events} />
-      {(run.status === "completed" || run.status === "timeout") && <DiffView events={events} matchId={matchId} run={run} />}
+      <TrajectoryView events={events} />{(run.status === "completed" || run.status === "timeout") && <DiffView events={events} matchId={matchId} run={run} />}
       {/* 会话续聊输入：完成后可继续追问，同轨迹追加、指标累加 */}
       {CAN_CONTINUE(run) && (
         <div className="shrink-0 space-y-1">

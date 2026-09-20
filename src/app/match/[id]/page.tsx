@@ -31,6 +31,8 @@ export default function MatchPage() {
   const [notifyPermission, setNotifyPermission] = useState<NotificationPermission | null>(null);
   // SSE 连接状态：断流时提示用户（轮询兜底仍在，但实时性下降）
   const [sseConnected, setSseConnected] = useState<boolean | null>(null);
+  // 预览刷新信号：run-event 出现文件产物类事件时递增，PreviewGrid 据此重拉文件清单（替代每 5s 全量 tick）
+  const [previewTick, setPreviewTick] = useState(0);
   useEffect(() => {
     queueMicrotask(() => {
       if (typeof Notification !== "undefined") setNotifyPermission(Notification.permission);
@@ -41,6 +43,8 @@ export default function MatchPage() {
     const doneRef = { current: false };
     // 已知 run 集合：重跑追加的新 run 首次经 SSE 出现时补拉全量，新卡片即时上屏
     const knownIds = new Set<string>();
+    // 已补拉轨迹的 run 集合：轮询兜底期间避免对已完成对局反复全量重拉（闭包 events 恒为空数组的旧 bug）
+    const loadedTraj = new Set<string>();
     const load = async () => {
       const res = await fetch(`/api/matches/${id}`);
       if (res.ok) {
@@ -49,25 +53,52 @@ export default function MatchPage() {
         runs.forEach((r: RunDTO) => knownIds.add(r.id));
         setMatchStatus(match.status);
         if (["completed", "partial"].includes(match.status)) doneRef.current = true;
-        // 兜底回放：拉历史轨迹（刷新/断流后仍有数据）
-        for (const r of runs) {
-          if (!events[r.id] || events[r.id]!.length === 0) {
-            const t = await fetch(`/api/matches/${id}/trajectory?runId=${r.id}`);
-            const d = await t.json();
-            if (d.events?.length) setEvents((prev) => ({ ...prev, [r.id]: d.events }));
+        // 兜底回放：只补拉尚未加载的 run，且并行拉取（刷新/断流后仍有数据；已加载的跳过）
+        const missing = runs.filter((r: RunDTO) => !loadedTraj.has(r.id));
+        if (missing.length > 0) {
+          const settled = await Promise.all(missing.map(async (r: RunDTO) => ({
+            runId: r.id,
+            events: (await (await fetch(`/api/matches/${id}/trajectory?runId=${r.id}`)).json()).events as ArenaEvent[] | undefined,
+          })));
+          for (const { runId, events } of settled) {
+            loadedTraj.add(runId);
+            // SSE 实时事件先到时已有增量，不覆盖（补拉只填历史空窗）
+            if (events?.length) setEvents((prev) => (prev[runId]?.length ? prev : { ...prev, [runId]: events }));
           }
         }
       }
     };
     load();
     const poll = setInterval(() => { if (!doneRef.current) load(); }, 5000);
+    // SSE 实时事件：100ms 批量合并入 state（React 18 自动批处理覆盖不到异步 SSE 回调，
+    // 高频 thinking/tool 事件逐个 setState 会触发整页反复重渲染，长对局卡死浏览器）
+    const pendingRef: Record<string, ArenaEvent[]> = {};
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushPending = () => {
+      flushTimer = null;
+      if (Object.keys(pendingRef).length === 0) return;
+      const buf = pendingRef;
+      for (const k of Object.keys(buf)) delete pendingRef[k];
+      setEvents((prev) => {
+        const next: Record<string, ArenaEvent[]> = { ...prev };
+        for (const [runId, evs] of Object.entries(buf)) {
+          next[runId] = [...(next[runId] ?? []), ...evs];
+        }
+        return next;
+      });
+    };
     const es = new EventSource(`/api/matches/${id}/stream`);
     es.onopen = () => setSseConnected(true);
     es.onerror = () => setSseConnected(false); // EventSource 自动重连，重连成功后 onopen 会复位
     es.onmessage = (m) => {
       const e = JSON.parse(m.data);
       if (e.channel === "run-event") {
-        setEvents((prev) => ({ ...prev, [e.runId]: [...(prev[e.runId] ?? []), e.event] }));
+        (pendingRef[e.runId] ??= []).push(e.event);
+        if (flushTimer == null) flushTimer = setTimeout(flushPending, 100);
+        // 文件产物类事件驱动预览刷新：写完文件/工具调用返回/对局结束即重拉文件清单
+        if (e.event.kind === "file_edit" || e.event.kind === "tool_call" || e.event.kind === "done") {
+          setPreviewTick((k) => k + 1);
+        }
       } else if (e.channel === "run-status") {
         // 重跑追加的新 run：SSE 先于轮询到达时列表里还没有它，补拉一次让新卡片上屏
         if (!knownIds.has(e.runId)) {
@@ -82,8 +113,7 @@ export default function MatchPage() {
         else if (["completed", "partial"].includes(e.status)) doneRef.current = true;
       }
     };
-    return () => { clearInterval(poll); es.close(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { clearInterval(poll); if (flushTimer != null) clearTimeout(flushTimer); es.close(); };
   }, [id, reloadTick]);
 
   const rerun = async (combos?: { harness: string; model: string }[]) => {
@@ -213,7 +243,7 @@ export default function MatchPage() {
           <div className="glass rounded-3xl p-8 text-sm text-white/40">等待运行启动…</div>
         )}
       </div>
-      <PreviewGrid matchId={id} runs={runs} live={matchStatus === "running"} />
+      <PreviewGrid matchId={id} runs={runs} tick={previewTick} />
       {showDiff && <RunDiff matchId={id} runs={runs} onClose={() => setShowDiff(false)} />}
     </main>
   );

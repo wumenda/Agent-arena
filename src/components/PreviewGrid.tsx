@@ -208,14 +208,10 @@ function PreviewCard({ matchId, run, tick }: { matchId: string; run: RunDTO; tic
 // 宽度档位决定每行列数：375→4 张、768→2 张、1280→1 张；live 时轮询新产出 HTML
 const WIDTH_COLS: Record<number, number> = { 375: 4, 768: 2, 1280: 1 };
 
-export default function PreviewGrid({ matchId, runs, live }: { matchId: string; runs: RunDTO[]; live: boolean }) {
-  const [tick, setTick] = useState(0);
+export default function PreviewGrid({ matchId, runs, tick }: { matchId: string; runs: RunDTO[]; tick: number }) {
+  // 不再自维护 5s setInterval 轮询：文件清单重拉由 match 页的事件驱动信号（tick）触发——
+  // run-event 的 file_edit/tool_call/done 出现时父组件递增 tick，服务端 listRunFiles 另有 5s 短缓存兜底
   const [viewW, setViewW] = useState(768);
-  useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => setTick((k) => k + 1), 5000);
-    return () => clearInterval(t);
-  }, [live]);
   if (runs.length === 0) return null;
   const cols = WIDTH_COLS[viewW] ?? 2;
   const colLabel: Record<number, string> = { 375: "4 张/行", 768: "2 张/行", 1280: "1 张/行" };
