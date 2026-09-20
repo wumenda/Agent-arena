@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { killTree } from "./proc";
-
 export type VerifyStatus = "passed" | "failed" | "skipped";
 export type VerifyResult = { status: VerifyStatus; log: string };
 
@@ -12,6 +11,8 @@ const TEST_FILE_RE = /(^|[\\/])(__tests__|tests?|spec)[\\/]|(^|[\\/])(test|spec)
 
 // 严格验证前置：从题库 git 仓库枚举原始测试文件（含 package.json），复制回运行目录覆盖 agent 的
 // 改动——防止 agent 修改测试或 test 脚本"自证通过"。只覆盖测试相关文件，不碰 agent 的修复代码。
+// 门条件：不要求 sourceDir 自带 .git——内置题库嵌在本仓库内，git ls-files 以 cwd 为作用域
+// 会向上继承父仓库且只返回该题目目录的文件；非 git 目录 ls-files 返回空，走下方跳过路径
 async function restoreOriginalTests(sourceDir: string, workdir: string): Promise<string> {
   const files = await new Promise<string[]>((resolve) => {
     const child = spawn("git", ["ls-files"], { cwd: sourceDir, shell: false });
@@ -44,7 +45,7 @@ export async function verifyFix(
   const logPath = path.join(workdir, "verify.log");
   const lines: string[] = [];
 
-  if (opts.sourceDir && existsSync(path.join(opts.sourceDir, ".git"))) {
+  if (opts.sourceDir) {
     lines.push(await restoreOriginalTests(opts.sourceDir, workdir));
   }
 

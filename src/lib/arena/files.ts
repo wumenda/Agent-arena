@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { PreviewUrlSchema, type ArenaEvent } from "./types";
 
@@ -78,22 +78,40 @@ export function safeResolveFile(workdir: string, relPath: string): string | null
 
 export type RunFileInfo = { path: string; size: number };
 
-// 递归列出 run 产出文件（排除轨迹文件本身），相对路径统一用 /
+// 产出文件清单短缓存：PreviewCard 切换/轮询/report 会高频调用 listRunFiles（同步递归遍历整个 workdir），
+// 短 TTL 缓存避免对相同目录反复全量 stat。key = workdir（路径唯一对应一次 run）
+const LIST_CACHE_TTL_MS = 5_000;
+const listCache = new Map<string, { at: number; files: RunFileInfo[] }>();
+
+// 递归列出 run 产出文件（排除轨迹文件本身），相对路径统一用 /；5s 内重复调用命中缓存。
+// 目录不存在（tmp 被系统清理/手工删除）返回空列表而非抛错——"有 DB 无目录"的历史 run 应显示空产物
 export function listRunFiles(workdir: string): RunFileInfo[] {
+  const hit = listCache.get(workdir);
+  if (hit && Date.now() - hit.at < LIST_CACHE_TTL_MS) return hit.files;
   const out: RunFileInfo[] = [];
   const walk = (d: string) => {
-    for (const e of readdirSync(d, { withFileTypes: true })) {
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(d, { withFileTypes: true });
+    } catch {
+      return; // 子目录不可读/已消失：跳过该子树
+    }
+    for (const e of entries) {
       const full = path.join(d, e.name);
       if (e.isDirectory()) walk(full);
       else {
         const rel = path.relative(workdir, full).split(path.sep).join("/");
         if (rel === "trajectory.jsonl" || rel === PREVIEW_URL_FILE) continue; // 内部文件不进产出列表
-        out.push({ path: rel, size: statSync(full).size });
+        try {
+          out.push({ path: rel, size: statSync(full).size });
+        } catch { /* 文件在遍历间隙被删：跳过 */ }
       }
     }
   };
   walk(workdir);
-  return out.sort((a, b) => a.path.localeCompare(b.path));
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  listCache.set(workdir, { at: Date.now(), files: out });
+  return out;
 }
 
 // 读取文件内容（超 1MB 截断）
@@ -106,12 +124,42 @@ export function readRunFile(workdir: string, relPath: string): { content: string
 }
 
 // 读取运行轨迹（trajectory.jsonl）并逐行解析为 ArenaEvent[]；
-// 文件缺失或单行损坏按尽力而为语义兜底空数组（轨迹属运行时数据，不因读取失败阻塞响应）
+// 逐行容错：单行损坏（半行写入是进程被杀/断电的常态）只跳过该行并插入 warn 标记，
+// 其余事件照常返回——崩溃后取证恰是最需要回放的时刻，不能整文件 all-or-nothing。
+// 走 LRU 缓存：报告/trajectory 路由/UI 补拉会高频读同一文件，全量 readFileSync+JSON.parse 在
+// 长轨迹（数千行）下是重复开销；缓存键 = workdir，文件 (mtimeMs, size) 变化即失效（append 写入会触碰 mtime）
+const TRAJ_CACHE_MAX = 30; // 缓存条目上限（FIFO 淘汰）
+const trajCache = new Map<string, { mtimeMs: number; size: number; events: ArenaEvent[] }>();
+
 export function readTrajectory(workdir: string): ArenaEvent[] {
+  const file = path.join(workdir, "trajectory.jsonl");
   try {
-    const traj = readFileSync(path.join(workdir, "trajectory.jsonl"), "utf8");
-    return traj.split("\n").filter(Boolean).map((l) => JSON.parse(l) as ArenaEvent);
+    const st = statSync(file);
+    const hit = trajCache.get(workdir);
+    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.events;
+    const traj = readFileSync(file, "utf8");
+    const events: ArenaEvent[] = [];
+    for (const line of traj.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        events.push(JSON.parse(line) as ArenaEvent);
+      } catch {
+        events.push({ kind: "warn", text: "[trajectory] 检测到损坏行（可能是写入中断），已跳过", ts: 0 });
+      }
+    }
+    trajCache.set(workdir, { mtimeMs: st.mtimeMs, size: st.size, events });
+    if (trajCache.size > TRAJ_CACHE_MAX) {
+      const oldest = trajCache.keys().next().value;
+      if (oldest != null) trajCache.delete(oldest);
+    }
+    return events;
   } catch {
     return [];
   }
+}
+
+/** 使某 run 的轨迹缓存失效（续聊轮追加事件后 mtime 变化自动失效；删除对局时主动清理） */
+export function invalidateTrajectoryCache(workdir: string): void {
+  trajCache.delete(workdir);
+  listCache.delete(workdir);
 }

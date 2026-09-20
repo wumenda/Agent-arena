@@ -7,6 +7,9 @@ import type { TokenUsage } from "./types";
  *
  * 单价单位：USD / 1M tokens。按火山方舟等公开牌价维护，价格调整时改这里即可；
  * 未收录的模型返回 null（UI 显示 n/a），绝不编造成 0。
+ *
+ * 缓存计价：缓存读取按输入价的 10% 计（主流供应商缓存命中价的通用折扣档）。
+ * 没有单独维护各模型缓存价的必要——它只影响成本量级，不影响完成率/耗时等主指标。
  */
 // 匹配规则：按数组顺序短路（find 取第一个命中），必须「先具体、后宽泛」排列——
 // 新增更具体的条目要插在宽泛正则（/doubao/、/o\d/、/gpt/ 等）之前，否则会被抢先误匹配
@@ -35,11 +38,17 @@ export function modelPrice(model: string): { inPrice: number; outPrice: number }
   return TABLE.find((t) => t.re.test(model)) ?? null;
 }
 
-/** tokens × 单价 → USD；模型未收录返回 null。缓存读取按输入档计价。 */
+// 缓存读取折扣档：输入价的 10%（公允缓存价随供应商不同，统一取主流折扣作量级估计）
+const CACHE_DISCOUNT = 0.1;
+
+/** tokens × 单价 → USD；模型未收录返回 null。缓存读取按输入价 10% 计。 */
 export function computeCostUsd(model: string, usage: TokenUsage): number | null {
   const p = modelPrice(model);
   if (!p) return null;
-  const input = usage.input + (usage.cacheRead ?? 0);
-  const cost = (input * p.inPrice + usage.output * p.outPrice) / 1e6;
+  const cost =
+    (usage.input * p.inPrice +
+      (usage.cacheRead ?? 0) * p.inPrice * CACHE_DISCOUNT +
+      usage.output * p.outPrice) /
+    1e6;
   return Math.round(cost * 1e6) / 1e6;
 }

@@ -75,6 +75,30 @@ export function getRunOfMatch(matchId: string, runId: string) {
   return run && run.matchId === matchId ? run : null;
 }
 
+/**
+ * 启动收敛：服务进程死亡（dev 崩溃/Ctrl+C/机器重启）后 DB 里停留的 running/pending 是"尸体"——
+ * 子进程登记随旧进程消失，无法停止也无法重跑（rerunCombos 因 running 拒绝执行，对局死锁）。
+ * 服务每次启动时把尸体收敛为 failed，有失败 run 的对局收敛为 partial（completed 只有全绿才成立）。
+ * 幂等：无尸体时零写入。返回收敛的 run 数（测试断言用）。
+ */
+export function reconcileStaleRuns(): number {
+  const stale = db.select({ id: runs.id, matchId: runs.matchId }).from(runs)
+    .where(sql`${runs.status} IN ('running', 'pending')`).all();
+  if (!stale.length) return 0;
+  const errText = "服务重启，运行中断（进程未随服务存活），已自动标记失败";
+  for (const { id, matchId } of stale) {
+    db.update(runs).set({ status: "failed", error: errText, finishedAt: new Date() }).where(eq(runs.id, id)).run();
+    // 同对局仍有未收敛的尸体时不急着定对局状态；最后一个收敛完再按全量 runs 判定
+    const remaining = listRuns(matchId);
+    const allSettled = remaining.every((r) => r.status !== "running" && r.status !== "pending");
+    if (allSettled) {
+      const allOk = remaining.every((r) => r.status === "completed");
+      updateMatch(matchId, { status: allOk ? "completed" : "partial" });
+    }
+  }
+  return stale.length;
+}
+
 export function updateRun(id: string, patch: Partial<RunRow>) {
   db.update(runs).set(patch).where(eq(runs.id, id)).run();
 }
@@ -87,13 +111,15 @@ export function updateMatch(id: string, patch: Partial<MatchRow>) {
   db.update(matches).set(patch).where(eq(matches.id, id)).run();
 }
 
-// 跨对局统计：按 harness×model 聚合（排除未开始的 run）
+// 跨对局统计：按 harness×model 聚合（排除未开始的 run）。
+// timeout 单列：完成率把"模型太慢被截断"混进"任务失败"，单列超时数让两者可区分（避免把慢误读成完成不了）
 export function getComboStats() {
   const rows = db.select({
     harness: runs.harness,
     model: runs.model,
     total: sql<number>`COUNT(*)`,
     completed: sql<number>`SUM(CASE WHEN ${runs.status} = 'completed' THEN 1 ELSE 0 END)`,
+    timeouts: sql<number>`SUM(CASE WHEN ${runs.status} = 'timeout' THEN 1 ELSE 0 END)`,
     avgDurationMs: sql<number | null>`AVG(${runs.durationMs})`,
     avgTokensIn: sql<number | null>`AVG(${runs.tokensIn})`,
     avgTokensOut: sql<number | null>`AVG(${runs.tokensOut})`,
@@ -102,12 +128,13 @@ export function getComboStats() {
   return rows.sort((a, b) => b.total - a.total);
 }
 
-// 跨对局统计：按 harness 汇总（统计页对比条形图，成本为累计花费）
+// 跨对局统计：按 harness 汇总（统计页对比条形图，成本为累计花费）；timeouts 同上单列
 export function getHarnessStats() {
   return db.select({
     harness: runs.harness,
     total: sql<number>`COUNT(*)`,
     completed: sql<number>`SUM(CASE WHEN ${runs.status} = 'completed' THEN 1 ELSE 0 END)`,
+    timeouts: sql<number>`SUM(CASE WHEN ${runs.status} = 'timeout' THEN 1 ELSE 0 END)`,
     avgDurationMs: sql<number | null>`AVG(${runs.durationMs})`,
     totalCostUsd: sql<number | null>`SUM(${runs.costUsd})`,
   }).from(runs).where(sql`${runs.status} != 'pending'`).groupBy(runs.harness).all()

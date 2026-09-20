@@ -19,6 +19,22 @@ describe("getComboStats", () => {
     expect(cx.total).toBe(1);
     expect(cx.avgCostUsd).toBeCloseTo(0.2);
   });
+
+  it("timeouts 单列：超时计入 total、独立于 completed 计数（慢模型 ≠ 失败）", () => {
+    createRun({ id: "to1", matchId: "tom", harness: "pi", model: "ark/glm-5.3-flash", workdir: "/tmp/t1" });
+    createRun({ id: "to2", matchId: "tom", harness: "pi", model: "ark/glm-5.3-flash", workdir: "/tmp/t2" });
+    createRun({ id: "to3", matchId: "tom", harness: "pi", model: "ark/glm-5.3-flash", workdir: "/tmp/t3" });
+    updateRun("to1", { status: "timeout" });
+    updateRun("to2", { status: "timeout" });
+    updateRun("to3", { status: "completed" });
+
+    const s = getComboStats().find((r) => r.harness === "pi")!;
+    expect(s.total).toBe(3);
+    expect(s.completed).toBe(1);
+    expect(s.timeouts).toBe(2);
+    const h = getHarnessStats().find((r) => r.harness === "pi")!;
+    expect(h.timeouts).toBe(2);
+  });
 });
 
 describe("getHarnessStats / getDailyTrend", () => {

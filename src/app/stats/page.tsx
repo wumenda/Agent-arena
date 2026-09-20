@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 
 type ComboStat = {
-  harness: string; model: string; total: number; completed: number;
+  harness: string; model: string; total: number; completed: number; timeouts: number;
   avgDurationMs: number | null; avgTokensIn: number | null; avgTokensOut: number | null; avgCostUsd: number | null;
 };
 type HarnessStat = {
-  harness: string; total: number; completed: number;
+  harness: string; total: number; completed: number; timeouts: number;
   avgDurationMs: number | null; totalCostUsd: number | null;
 };
 type TrendPoint = { date: string; total: number; completed: number; costUsd: number };
@@ -75,6 +75,7 @@ export default function StatsPage() {
                   <span className="font-medium text-white/85">{h.harness}</span>
                   <span className="font-mono text-white/40">
                     {h.total} 次 · 完成率 {Math.round((h.completed / h.total) * 100)}%
+                    {h.timeouts > 0 && ` · 超时 ${h.timeouts}`}
                     · 均耗时 {fmt(h.avgDurationMs)}
                     {h.totalCostUsd != null && ` · 累计 $${h.totalCostUsd.toFixed(4)}`}
                   </span>
@@ -151,6 +152,7 @@ export default function StatsPage() {
                 <th className="px-3 py-2 text-left font-medium">组合</th>
                 <th className="px-3 py-2 text-right font-medium">运行次数</th>
                 <th className="px-3 py-2 text-right font-medium">完成率</th>
+                <th className="px-3 py-2 text-right font-medium" title="15 分钟总超时被终止的次数——把『模型太慢』与『任务失败』区分开">超时</th>
                 <th className="px-3 py-2 text-right font-medium">平均耗时</th>
                 <th className="px-3 py-2 text-right font-medium">平均 tokens in→out</th>
                 <th className="px-3 py-2 text-right font-medium">平均成本</th>
@@ -168,6 +170,7 @@ export default function StatsPage() {
                   <td className="px-3 py-2 font-sans whitespace-nowrap text-white/85">{s.harness} · {s.model}</td>
                   <td className="px-3 py-2 text-right text-white/60">{s.total}</td>
                   <td className="px-3 py-2 text-right text-white/60">{Math.round((s.completed / s.total) * 100)}%</td>
+                  <td className={`px-3 py-2 text-right ${s.timeouts > 0 ? "text-amber-300/90" : "text-white/60"}`}>{s.timeouts}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap text-white/60">{fmt(s.avgDurationMs)}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap text-white/60">
                     {s.avgTokensIn != null ? `${Math.round(s.avgTokensIn)} → ${Math.round(s.avgTokensOut ?? 0)}` : "—"}

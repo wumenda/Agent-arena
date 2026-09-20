@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { safeResolveFile, listRunFiles, readRunFile, extractPreviewUrl, savePreviewUrl, readPreviewUrl, previewUrlPort, clearPreviewUrl, PREVIEW_URL_FILE } from "@/lib/arena/files";
+import { safeResolveFile, listRunFiles, readRunFile, extractPreviewUrl, savePreviewUrl, readPreviewUrl, previewUrlPort, clearPreviewUrl, readTrajectory, invalidateTrajectoryCache, PREVIEW_URL_FILE } from "@/lib/arena/files";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(path.join(os.tmpdir(), "arena-files-")); });
@@ -32,6 +32,40 @@ describe("listRunFiles", () => {
     const files = listRunFiles(dir);
     expect(files.map((f) => f.path)).toEqual(["hello.txt", "src/main.ts"]);
     expect(files[0].size).toBe(2);
+  });
+
+  it("目录不存在时返回空列表（tmp 被清理后的'有 DB 无目录'场景）", () => {
+    expect(listRunFiles(path.join(dir, "no-such-dir"))).toEqual([]);
+  });
+
+  it("子目录消失时跳过该子树不抛错", () => {
+    writeFileSync(path.join(dir, "keep.txt"), "k");
+    mkdirSync(path.join(dir, "vanish"));
+    writeFileSync(path.join(dir, "vanish", "x.txt"), "x");
+    const files = listRunFiles(dir);
+    expect(files.map((f) => f.path)).toEqual(["keep.txt", "vanish/x.txt"]);
+  });
+});
+
+describe("readTrajectory 逐行容错", () => {
+  it("单行损坏只跳过该行并插入 warn 标记，其余事件完整返回", () => {
+    const good1 = JSON.stringify({ kind: "message", text: "t1", ts: 1 });
+    const good2 = JSON.stringify({ kind: "done", ts: 2 });
+    writeFileSync(path.join(dir, "trajectory.jsonl"), `${good1}\n{"kind":"broken"\n${good2}\n`);
+    const events = readTrajectory(dir);
+    expect(events).toHaveLength(3);
+    expect(events[0]).toMatchObject({ kind: "message", text: "t1" });
+    expect(events[1].kind).toBe("warn"); // 损坏行 → warn 标记
+    expect(events[2]).toMatchObject({ kind: "done" });
+    invalidateTrajectoryCache(dir);
+  });
+
+  it("无换行结尾的最后一行（正常事件）也能解析", () => {
+    writeFileSync(path.join(dir, "trajectory.jsonl"), JSON.stringify({ kind: "message", text: "tail", ts: 9 }));
+    const events = readTrajectory(dir);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ kind: "message", text: "tail" });
+    invalidateTrajectoryCache(dir);
   });
 });
 

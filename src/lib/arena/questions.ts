@@ -105,3 +105,14 @@ export function resolveQuestionDir(bank: string, id: string): string | null {
   }
   return null;
 }
+
+/**
+ * 题库是否启用服务预览约定（bank.json 的 previewHint 字段，缺省启用）。
+ * 算法/bug 修复类题目用不上"起本地服务"，追加 hint 是纯计量噪声（多出的提示文本计入 tokensIn），
+ * 此类题库可声明 previewHint: false 关闭。sourceDir 为空（手输 prompt 无选题）时始终启用。
+ */
+export function previewHintEnabled(questionDir: string | null | undefined): boolean {
+  if (!questionDir) return true;
+  const meta = readMeta<{ previewHint: boolean }>(path.dirname(questionDir), "bank.json");
+  return meta.previewHint !== false;
+}

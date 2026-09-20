@@ -13,6 +13,7 @@ import { verifyFix } from "./verify";
 import { killTree } from "./proc";
 import { workdirRoot } from "./paths";
 import { extractPreviewUrl, savePreviewUrl, PREVIEW_PROMPT_HINT } from "./files";
+import { previewHintEnabled } from "./questions";
 import type { ArenaEvent, Combo } from "./types";
 
 const CONCURRENCY = Number(process.env.ARENA_CONCURRENCY ?? 3);
@@ -170,6 +171,11 @@ async function executeTurn(opts: {
 
   let timedOut = false;
 
+  // stdout/stderr 共用的行缓冲：data 事件按任意边界切分，一条 JSONL 行可能横跨多个 chunk，
+  // 不缓冲会把两半分别 JSON.parse 失败后静默丢弃（长 tool_result / 大目录列表是常态形态）
+  let stdoutBuf = "";
+  let stderrBuf = "";
+
   await new Promise<void>((resolve) => {
     const child = spawn(opts.cmd.file, opts.cmd.args, { cwd: dir, shell: opts.cmd.shell ?? true, env: { ...process.env } });
     childRef = child;
@@ -181,19 +187,33 @@ async function executeTurn(opts: {
       const events = fake ? fakeLineEvents(line) : parser.parse(line);
       handleEvents(events);
     };
+    const splitLines = (buf: string) => {
+      const lines = buf.split("\n");
+      return { complete: lines.slice(0, -1), leftover: lines[lines.length - 1] ?? "" };
+    };
     child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => chunk.split("\n").forEach(handleLine));
+    child.stdout.on("data", (chunk: string) => {
+      stdoutBuf += chunk;
+      const { complete, leftover } = splitLines(stdoutBuf);
+      stdoutBuf = leftover;
+      complete.forEach(handleLine);
+    });
     child.stderr.setEncoding("utf8");
     // stderr 分类（Task 0 修正的延续：不包 JSON 直接按行处理）——warn/error 上屏（黄/红），调试噪音留档不展示
-    child.stderr.on("data", (chunk: string) => chunk.split("\n").forEach((l) => {
-      if (!l.trim()) return;
-      // 级别令牌优先：WARN 行归 warn（正文里的 failed/error= 字段名不算错误），
-      // 带显式 ERROR/FATAL 级别的行归 error，无级别令牌时按错误特征兜底
-      const kind: ArenaEvent["kind"] = STDERR_WARN_RE.test(l) && !STDERR_ERR_LEVEL_RE.test(l)
-        ? "warn"
-        : STDERR_ERR_RE.test(l) ? "error" : "system";
-      handleEvents([{ kind, text: l, ts: Date.now() }]);
-    }));
+    child.stderr.on("data", (chunk: string) => {
+      stderrBuf += chunk;
+      const { complete, leftover } = splitLines(stderrBuf);
+      stderrBuf = leftover;
+      complete.forEach((l) => {
+        if (!l.trim()) return;
+        // 级别令牌优先：WARN 行归 warn（正文里的 failed/error= 字段名不算错误），
+        // 带显式 ERROR/FATAL 级别的行归 error，无级别令牌时按错误特征兜底
+        const kind: ArenaEvent["kind"] = STDERR_WARN_RE.test(l) && !STDERR_ERR_LEVEL_RE.test(l)
+          ? "warn"
+          : STDERR_ERR_RE.test(l) ? "error" : "system";
+        handleEvents([{ kind, text: l, ts: Date.now() }]);
+      });
+    });
     if (opts.cmd.stdin) child.stdin.write(opts.cmd.stdin, () => child.stdin.end());
     else child.stdin.end();
     child.on("error", (err) => {
@@ -211,6 +231,9 @@ async function executeTurn(opts: {
       clearTimeout(timer);
       if (idleTimer) clearTimeout(idleTimer);
       activeChildren.delete(runId);
+      // 冲刷行缓冲残留（末行可能不带换行符）
+      if (stdoutBuf.trim()) handleLine(stdoutBuf);
+      if (stderrBuf.trim()) handleEvents([{ kind: STDERR_WARN_RE.test(stderrBuf) && !STDERR_ERR_LEVEL_RE.test(stderrBuf) ? "warn" : "system", text: stderrBuf, ts: Date.now() }]);
       handleEvents(parser.flush?.() ?? []);
       if (!doneEmitted) handleEvents([{ kind: "done", ts: Date.now() }]); // 保证轨迹以 done 收尾（UI/回放依赖）
       if (manualStops.has(runId)) stopReason = "用户手动停止";
@@ -281,7 +304,7 @@ async function executeRun(matchId: string, prompt: string, combo: Combo, runId: 
   updateRun(runId, { status: "running", startedAt: new Date() });
   emitRunStatus(matchId, runId, "running");
 
-  // 题目项目预置：把源目录复制进本运行的独立工作目录（各 agent 拿同一道题的独立副本，隔离修改）
+  // 题目项目预置：把源目录复制进每个运行的独立工作目录（各 agent 拿同一道题的独立副本，隔离修改）
   if (sourceDir) {
     try {
       seedWorkdir(dir, sourceDir);
@@ -293,7 +316,9 @@ async function executeRun(matchId: string, prompt: string, combo: Combo, runId: 
   }
 
   const fake = resolveFake(combo.harness);
-  const taskPrompt = prompt + PREVIEW_PROMPT_HINT; // 追加服务预览约定（fake 替身不读 prompt，无影响）
+  // 服务预览约定按题库开关决定是否追加（算法/bug 修复题库 bank.json 声明 previewHint: false 时关闭，
+  // 避免 hint 文本成为纯 token 计量噪声）；手输 prompt（无选题）始终追加
+  const taskPrompt = previewHintEnabled(sourceDir) ? prompt + PREVIEW_PROMPT_HINT : prompt;
   let cmd: TurnCmd;
   if (fake) {
     cmd = fake;
@@ -325,7 +350,8 @@ export async function continueRun(matchId: string, runId: string, prompt: string
   emitRunStatus(matchId, runId, "running");
 
   const fake = resolveFake(combo.harness);
-  const taskPrompt = prompt + PREVIEW_PROMPT_HINT; // 续聊轮同样追加服务预览约定
+  // 续聊轮沿用对局创建时的预览 hint 开关（与首轮保持同一 prompt 约定）
+  const taskPrompt = previewHintEnabled(match.sourceDir) ? prompt + PREVIEW_PROMPT_HINT : prompt;
   let cmd: TurnCmd;
   if (fake) {
     cmd = fake;

@@ -146,4 +146,64 @@ describe("runner", () => {
     const saved = fs.readFileSync(path.join(r.workdir, ".arena", "preview-url"), "utf8");
     expect(saved).toBe("http://localhost:7777");
   }, 30000);
+
+  it("跨 chunk 长行不丢：200KB 单行 JSON 分多次写出，事件完整落轨迹（行缓冲回归）", async () => {
+    const m = createMatch({ prompt: "p", combos: [{ harness: "claude-code", model: "x" }] });
+    // 单条 write 立即结束，OS pipe 缓冲（64KB）必然把 200KB+ 的行切成多个 data chunk
+    const script = path.join(os.tmpdir(), "arena-longline.mjs");
+    fs.writeFileSync(script, [
+      `const big = "x".repeat(200 * 1024);`,
+      `process.stdout.write(JSON.stringify({kind:"message",text:big,ts:1}) + "\\n");`,
+      `process.stdout.write(JSON.stringify({kind:"done",ts:2}) + "\\n");`,
+    ].join("\n"));
+    process.env.ARENA_FAKE_CMD = `node ${script}`;
+    await runMatch(m.id);
+    const [r] = listRuns(m.id);
+    expect(r.status).toBe("completed");
+    const traj = fs.readFileSync(path.join(r.workdir, "trajectory.jsonl"), "utf8");
+    const lines = traj.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    // 长行 message 完整保留（未被 chunk 边界截断丢弃）+ done 收尾
+    const msg = lines.find((e) => e.kind === "message");
+    expect(msg?.text).toHaveLength(200 * 1024);
+    expect(lines.some((e) => e.kind === "done")).toBe(true);
+  }, 30000);
+
+  it("半集成：PATH shim 顶替真实 CLI，runner 走真实 adapter 命令与 claude-family parser 全链路", async () => {
+    // fake 直通路径绕过真实 parser（fakeLineEvents 直接产 ArenaEvent），adapter 测试又只测 parser——
+    // 两者拼接处（真实 parser × runner 状态机）此前无用例。本用例把 shim 目录前置到 PATH，
+    // 不设 ARENA_FAKE_CMD*，runner 经真实 buildCommand spawn shim、经真实 parser 解析 claude-family JSONL
+    delete process.env.ARENA_FAKE_CMD;
+    delete process.env["ARENA_FAKE_CMD_claude-code"];
+    const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "arena-shim-"));
+    const shimScript = path.join(shimDir, "out.mjs");
+    fs.writeFileSync(shimScript, [
+      `console.log(JSON.stringify({type:"system",subtype:"init",session_id:"s1"}));`,
+      `console.log(JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"修复完成"}]}}));`,
+      `console.log(JSON.stringify({type:"result",is_error:false,usage:{input_tokens:123,output_tokens:45,cache_read_input_tokens:7}}));`,
+    ].join("\n"));
+    const isWin = process.platform === "win32";
+    // adapter 的 buildCommand file 字段是 "claude"（CLI 实名），不是 harness id
+    const shim = path.join(shimDir, isWin ? "claude.cmd" : "claude");
+    fs.writeFileSync(shim, isWin
+      ? `@echo off\r\nnode "${shimScript}" %*\r\n`
+      : `#!/bin/sh\nnode "${shimScript}" "$@"\n`);
+    if (!isWin) fs.chmodSync(shim, 0o755);
+    const origPath = process.env.PATH;
+    process.env.PATH = `${shimDir}${path.delimiter}${origPath}`;
+    try {
+      const m = createMatch({ prompt: "p", combos: [{ harness: "claude-code", model: "x" }] });
+      await runMatch(m.id);
+      const [r] = listRuns(m.id);
+      // 退出码 0 + result 行 is_error=false → completed
+      expect(r.status).toBe("completed");
+      // usage 经真实 claude-family parser 从 result 行提取 → 指标落库（fake 直通做不到这一点）
+      expect(r.tokensIn).toBe(123);
+      expect(r.tokensOut).toBe(45);
+      const traj = fs.readFileSync(path.join(r.workdir, "trajectory.jsonl"), "utf8");
+      expect(traj).toContain("修复完成");
+    } finally {
+      process.env.PATH = origPath;
+      fs.rmSync(shimDir, { recursive: true, force: true });
+    }
+  }, 30000);
 });

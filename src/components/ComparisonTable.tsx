@@ -44,9 +44,10 @@ export default function ComparisonTable({ runs }: { runs: RunDTO[] }) {
     skipped: { text: "— 跳过", cls: "text-white/40", title: "题目无测试套件" },
   };
 
-  const th = (key: SortKey, label: string) => (
+  const th = (key: SortKey, label: string, title?: string) => (
     <th
       className="cursor-pointer px-3 py-2 text-right font-medium whitespace-nowrap select-none hover:text-white"
+      title={title}
       onClick={() => { if (sortKey === key) setAsc(!asc); else { setSortKey(key); setAsc(true); } }}
     >
       {label}{sortKey === key ? (asc ? " ↑" : " ↓") : ""}
@@ -63,7 +64,11 @@ export default function ComparisonTable({ runs }: { runs: RunDTO[] }) {
             {th("duration", "耗时")}
             {th("tokensIn", "tokens in")}
             {th("tokensOut", "tokens out")}
-            {th("cost", "成本")}
+            {th(
+              "cost",
+              "成本",
+              "口径：tokens × 统一单价（CLI 自报成本不可信），缓存读取按输入价 10% 计。注意部分 harness 不上报缓存维度（其成本不含缓存折扣），跨 harness 的成本对比仅供参考，同 harness 跨模型对比更可靠。",
+            )}
             {showVerify && <th className="px-3 py-2 text-right font-medium">验证</th>}
           </tr>
         </thead>

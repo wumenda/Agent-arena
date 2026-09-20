@@ -67,5 +67,41 @@ describe(
       expect(r.log).toContain("已从题库恢复");
       expect(readFileSync(path.join(dir, "test.js"), "utf8")).toContain("original test");
     }, TIMEOUT + 5000);
+
+    it("restores tests when sourceDir has no own .git but sits inside a parent git repo (内置题库场景)", async () => {
+      // 内置题库嵌在本仓库内：题目目录自身无 .git，git ls-files 向上继承父仓库。
+      // 父仓库还包含题目目录之外的文件（tests/arena/x.test.ts），验证恢复只限 sourceDir 范围不串味
+      const parent = path.join(base, "parent-repo");
+      const src = path.join(parent, "questions", "mybank", "myq");
+      mkdirSync(path.join(parent, "tests", "arena"), { recursive: true });
+      mkdirSync(src, { recursive: true });
+      writeFileSync(path.join(parent, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }));
+      writeFileSync(path.join(src, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }));
+      writeFileSync(path.join(src, "test.js"), 'console.log("original test");\n');
+      writeFileSync(path.join(parent, "tests", "arena", "x.test.ts"), "it('is arena test', () => {});\n");
+      execSync("git init", { cwd: parent, stdio: "ignore" });
+      execSync('git add -A && git -c user.name=t -c user.email=t@t@localhost commit -m init', { cwd: parent, stdio: "ignore" });
+
+      // agent 作弊：改测试。sourceDir（题目目录）本身无 .git
+      const dir = path.join(base, "cheat-nested");
+      cpSync(src, dir, { recursive: true });
+      writeFileSync(path.join(dir, "test.js"), "process.exit(1);\n");
+
+      const r = await verifyFix(dir, { sourceDir: src, timeoutMs: TIMEOUT });
+      expect(r.status, r.log).toBe("passed"); // 父仓库的原始测试被恢复，反作弊对内置题库生效
+      expect(r.log).toContain("已从题库恢复 2 个原始测试文件");
+      expect(readFileSync(path.join(dir, "test.js"), "utf8")).toContain("original test");
+    }, TIMEOUT + 5000);
+
+    it("skips restore silently when sourceDir is outside any git repo (用户题库场景)", async () => {
+      // .arena/questions 下用户自放题目不在任何 git 仓库内：git ls-files 失败/空 → 跳过恢复
+      const src = path.join(base, "nogit");
+      mkdirSync(src, { recursive: true });
+      writeFileSync(path.join(src, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }));
+      writeFileSync(path.join(src, "test.js"), 'console.log("original test");\n');
+      const r = await verifyFix(src, { sourceDir: src, timeoutMs: TIMEOUT });
+      expect(r.status).toBe("passed"); // 测试未被 agent 改过，原样通过
+      expect(r.log).not.toContain("已从题库恢复");
+    }, TIMEOUT + 5000);
   },
 );
