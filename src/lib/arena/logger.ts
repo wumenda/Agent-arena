@@ -4,7 +4,10 @@ import path from "node:path";
 // 轻量日志落盘：.arena/arena.log（个人工具，不做轮转/分级）。
 // 用途：服务崩溃、run 失败/超时/停止、启动收敛等无法只靠 DB/trajectory 追溯的事件。
 // 不记录密钥、不记录 prompt 全文（含敏感信息的字段由调用方决定是否传入）。
-const LOG_DIR = process.env.ARENA_DB ? path.dirname(process.env.ARENA_DB) : ".arena";
+// 目录取 ARENA_DB 所在目录（:memory: 特判回退 .arena），保证与 DB 同处一室便于一起备份/清理
+const LOG_DIR = process.env.ARENA_DB && process.env.ARENA_DB !== ":memory:"
+  ? path.dirname(process.env.ARENA_DB)
+  : ".arena";
 
 export function logArena(event: string, fields?: Record<string, unknown>): void {
   try {
