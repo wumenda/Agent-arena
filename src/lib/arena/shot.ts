@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
 import pixelmatch from "pixelmatch";
@@ -55,6 +55,27 @@ export async function renderShot(html: string, outFile: string): Promise<ShotRes
 }
 
 const SHOT_DIR = path.join(".arena", "shots");
+
+// 截图缓存清理：视觉对比的 PNG 按 matchId 前缀命名，随对局删除/超期 workdir 清理时一并清。
+// 保守：只删文件不删目录（目录由 .arena 整体管理）。返回清理的文件数。
+// dir 可注入（测试用），默认 .arena/shots
+export function cleanupShots(keepDays: number, dir = SHOT_DIR): number {
+  if (keepDays <= 0) return 0;
+  const cutoff = Date.now() - keepDays * 86400000;
+  let removed = 0;
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isFile() || !e.name.endsWith(".png")) continue;
+      const st = statSync(path.join(dir, e.name));
+      if (st.mtimeMs < cutoff) {
+        rmSync(path.join(dir, e.name), { force: true });
+        removed++;
+      }
+    }
+  } catch { /* 目录不存在/不可读：无事可清 */ }
+  return removed;
+}
 
 export type ShotDiffResult = {
   left: string;

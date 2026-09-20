@@ -11,5 +11,9 @@ export async function register() {
   if (Number.isFinite(keepDays) && keepDays > 0) {
     const removed = cleanupStaleWorkdirs(keepDays);
     if (removed > 0) console.log(`[arena] 已清理 ${removed} 个超期 workdir（保留 ${keepDays} 天）`);
+    // 视觉对比截图缓存随同一保留策略清理（PNG 按 matchId 前缀命名）
+    const { cleanupShots } = await import("@/lib/arena/shot");
+    const removedShots = cleanupShots(keepDays);
+    if (removedShots > 0) console.log(`[arena] 已清理 ${removedShots} 个超期截图缓存`);
   }
 }

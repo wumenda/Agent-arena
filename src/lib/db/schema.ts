@@ -33,8 +33,23 @@ export const runs = sqliteTable("runs", {
 export type MatchRow = typeof matches.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 
-/** 浏览器可见的运行 DTO：剥离 workdir 绝对路径（本地文件系统布局不外泄，UI 与 DB schema 解耦） */
+/** 浏览器可见的运行 DTO：显式 pick 字段（workdir 是本地文件系统布局，绝不能外泄——
+ * 不能靠 spread + 返回类型排除，那是类型层面的假象，JSON 序列化时多余属性照样出去） */
 export type RunDTO = Omit<RunRow, "workdir">;
 export function toRunDTO(run: RunRow): RunDTO {
-  return { ...run }; // spread 不触发多余属性检查，workdir 被返回类型自然排除
+  return {
+    id: run.id,
+    matchId: run.matchId,
+    harness: run.harness,
+    model: run.model,
+    status: run.status,
+    error: run.error,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    durationMs: run.durationMs,
+    tokensIn: run.tokensIn,
+    tokensOut: run.tokensOut,
+    costUsd: run.costUsd,
+    verifyStatus: run.verifyStatus,
+  };
 }
